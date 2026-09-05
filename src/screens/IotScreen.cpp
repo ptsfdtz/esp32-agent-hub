@@ -13,7 +13,9 @@ void screens::iot(Canvas& c, const ScreenManager& ui, const Model& m, uint32_t n
         c.clippedText(2, 23, m.network.ssid);
         c.text(2, 36, m.network.ip);
         c.clippedText(2, 49, m.network.mqttHost);
-        char text[22]; snprintf(text, sizeof(text), "%ddBm   %ums", m.network.rssi, m.network.latencyMs);
+        char text[22];
+        if(m.network.wifi) snprintf(text, sizeof(text), "%ddBm   --ms", m.network.rssi);
+        else snprintf(text, sizeof(text), "--dBm   --ms");
         c.text(2, 62, text);
     }
 }

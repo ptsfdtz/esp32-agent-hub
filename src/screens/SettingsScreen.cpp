@@ -5,8 +5,8 @@ void screens::settings(Canvas& c, const ScreenManager& ui, const Model& m, uint3
     header(c, labels[ui.setting], ui, m);
     char text[22];
     switch (ui.setting) {
-        case 0: c.text(4, 29, "Simulated network"); c.clippedText(4, 47, m.network.ssid); break;
-        case 1: c.text(4, 29, "Simulated broker"); c.clippedText(4, 47, m.network.mqttHost); break;
+        case 0: c.text(4, 29, m.network.wifi ? "Connected" : "Disconnected"); c.clippedText(4, 47, m.network.ssid); break;
+        case 1: c.text(4, 29, m.network.mqtt ? "Connected" : "Disconnected"); c.clippedText(4, 47, m.network.mqttHost); break;
         case 2:
             snprintf(text, sizeof(text), "%u / 255", m.device.contrast);
             c.center(32, text); c.meter(8,47,112,m.device.contrast*100.0f/255); break;

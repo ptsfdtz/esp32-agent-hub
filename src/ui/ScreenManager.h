@@ -17,7 +17,8 @@ public:
     uint32_t routeRevision = 0;
     int direction = 1;
     char toast[22] = "";
-    bool sampleRequested = false;
+    enum class Command { None, Confirm, Cancel, Stop };
+    Command commandRequested = Command::None;
     void begin(const Model& model, uint32_t now);
     bool update(const Model& model, uint32_t now);
     void input(InputEvent event, Model& model, uint32_t now);

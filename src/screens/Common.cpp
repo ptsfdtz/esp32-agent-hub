@@ -1,8 +1,8 @@
 #include "Screens.h"
 #include "Icons.h"
-void screens::header(Canvas& c,const char* title,const ScreenManager& ui,const Model& m) {
+void screens::header(Canvas& c,const char* title,const ScreenManager& ui,const Model&) {
     c.title();c.text(4+int(lroundf(ui.animation[Title].value)),10,title);
-    if(m.device.mock){c.small();c.right(9,"mock");}c.font();
+    c.font();
 }
 void screens::menu(Canvas& c,const ScreenManager& ui,const char* const* labels,int count) {
     int scroll=int(lroundf(ui.animation[Scroll].value));

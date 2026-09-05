@@ -1,0 +1,12 @@
+{
+  "host": "127.0.0.1",
+  "port": 1883,
+  "client_id": "agentdeck-pc-main",
+  "username_env": "AGENTDECK_MQTT_USER",
+  "password_env": "AGENTDECK_MQTT_PASSWORD",
+  "devices": ["agentdeck-01"],
+  "state_dir": ".state",
+  "interval": 3,
+  "codex_usage_command": ["codex", "app-server"],
+  "handlers": {}
+}

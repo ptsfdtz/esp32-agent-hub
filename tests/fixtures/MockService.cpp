@@ -4,7 +4,7 @@ void MockService::begin(Model& m, uint32_t now) {
     snprintf(m.agents[0].name, sizeof(m.agents[0].name), "Codex");
     snprintf(m.agents[1].name, sizeof(m.agents[1].name), "Claude");
     snprintf(m.agents[2].name, sizeof(m.agents[2].name), "OpenCode");
-    auto& a = m.agents[0];
+    auto& a = m.agents[0]; a.usageKnown = true; m.pc.gpuKnown = true; m.device.timeSynced = true; m.device.clockMinutes = 582;
     a.online = a.working = true;
     a.shortUsage = 72; a.weeklyUsage = 41;
     a.shortReset = 12360; a.weeklyReset = 240000;

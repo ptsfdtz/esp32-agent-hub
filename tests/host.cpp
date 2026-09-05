@@ -1,10 +1,13 @@
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
 #include <filesystem>
 #include "input/Quadrature.h"
 #include "input/Button.h"
-#include "services/MockService.h"
+#include "fixtures/MockService.h"
 #include "ui/Renderer.h"
 
 namespace fs = std::filesystem;
@@ -53,17 +56,45 @@ bool coreTests() {
     t.adjust(-1000); CHECK(t.remainingMs==60000); t.adjust(1000); CHECK(t.remainingMs==599*60000);
 
     Model m; MockService mock; mock.begin(m,0); ScreenManager ui; ui.begin(m,0);
-    ui.input(InputEvent::PUSH,m,500); CHECK(ui.page==Page::Launcher);
+    ui.input(InputEvent::CONFIRM,m,500); CHECK(ui.page==Page::Launcher);
     for(int i=0;i<20;++i) ui.input(InputEvent::ROTATE_RIGHT,m,500+i);
     CHECK(ui.selected==5); ui.update(m,1000); CHECK(ui.animation[Scroll].value==42);
+    ui.input(InputEvent::PUSH,m,999); CHECK(ui.page==Page::Launcher && ui.selected==5);
     ui.input(InputEvent::CONFIRM,m,1000); CHECK(ui.page==Page::Settings);
     for(int i=0;i<3;++i) ui.input(InputEvent::ROTATE_RIGHT,m,1000+i);
+    ui.input(InputEvent::PUSH,m,1099); CHECK(ui.page==Page::Settings && ui.selected==3);
     ui.input(InputEvent::CONFIRM,m,1100); CHECK(ui.page==Page::SettingDetail && ui.setting==3);
     ui.input(InputEvent::ROTATE_RIGHT,m,1200); CHECK(ui.animation.motion==Motion::Reduced);
     ui.input(InputEvent::BACK,m,1300); CHECK(ui.page==Page::Settings && ui.selected==3);
     ui.input(InputEvent::BACK_LONG,m,1400); CHECK(ui.page==Page::Home);
-    ui.input(InputEvent::PUSH_LONG,m,1500); CHECK(ui.sampleRequested);
+    ui.input(InputEvent::PUSH_LONG,m,1500); CHECK(ui.commandRequested==ScreenManager::Command::None);
     mock.changeSample(m,1500); ui.update(m,1700); ui.update(m,2000); CHECK(ui.animation[ShortBar].value==80);
+    ui.input(InputEvent::PUSH,m,2100); CHECK(ui.page==Page::Home);
+    ui.input(InputEvent::CONFIRM,m,2110); CHECK(ui.page==Page::Launcher);
+    ui.input(InputEvent::ROTATE_RIGHT,m,2120);
+    ui.input(InputEvent::CONFIRM,m,2130); CHECK(ui.page==Page::Agents);
+    ui.input(InputEvent::PUSH,m,2140); CHECK(ui.page==Page::Agents);
+    ui.input(InputEvent::CONFIRM,m,2150); CHECK(ui.page==Page::AgentDetail);
+    CHECK(ui.commandRequested==ScreenManager::Command::None); // Navigation is not a remote confirmation.
+    ui.input(InputEvent::PUSH,m,2160); CHECK(ui.commandRequested==ScreenManager::Command::None);
+    ui.input(InputEvent::CONFIRM,m,2200); CHECK(ui.commandRequested==ScreenManager::Command::Confirm);
+    ui.commandRequested=ScreenManager::Command::None;
+    ui.input(InputEvent::PUSH_LONG,m,2300); CHECK(ui.commandRequested==ScreenManager::Command::Stop);
+    ui.commandRequested=ScreenManager::Command::None;
+    ui.input(InputEvent::BACK,m,2400); CHECK(ui.commandRequested==ScreenManager::Command::Cancel);
+    CHECK(ui.page==Page::Agents && ui.agent==0);
+    for (Page page : {Page::Home,Page::Launcher,Page::Agents,Page::Pc,Page::Iot,
+                      Page::Timer,Page::Settings,Page::IotDetail,Page::SettingDetail}) {
+        ScreenManager navigation; navigation.begin(m,0); navigation.go(page,0,1,100);
+        uint32_t route = navigation.routeRevision;
+        navigation.input(InputEvent::PUSH,m,200);
+        CHECK(navigation.page==page && navigation.routeRevision==route);
+        CHECK(navigation.commandRequested==ScreenManager::Command::None && !navigation.timer.running);
+    }
+    ScreenManager timerUi; timerUi.begin(m,0); timerUi.go(Page::Timer,0,1,100);
+    timerUi.input(InputEvent::CONFIRM,m,200); CHECK(timerUi.timer.running && timerUi.page==Page::Timer);
+    timerUi.input(InputEvent::CONFIRM,m,300); CHECK(!timerUi.timer.running && timerUi.page==Page::Timer);
+    timerUi.input(InputEvent::BACK,m,400); CHECK(timerUi.page==Page::Launcher);
     CHECK(fresh(true,UINT32_MAX-100,100)); CHECK(!fresh(true,0,16000));
     Buddy buddy; AnimationManager motion; buddy.begin(UINT32_MAX-1000);
     buddy.update(motion,19000,true); CHECK(buddy.idle); // inactivity survives millis wrap
@@ -124,7 +155,7 @@ bool renderTests() {
     frame(0); frame(500); snapshot(display,"01-home");
     CHECK(u8g2_GetBufferSize(&display)==1024);
     uint8_t before[1024]; memcpy(before,u8g2_GetBufferPtr(&display),1024);
-    ui.input(InputEvent::PUSH,m,600); CHECK(frame(600));
+    ui.input(InputEvent::CONFIRM,m,600); CHECK(frame(600));
     CHECK(memcmp(before,u8g2_GetBufferPtr(&display),1024)==0);
     frame(633); snapshot(display,"02-slide-33ms");
     memcpy(before,u8g2_GetBufferPtr(&display),1024);
@@ -184,6 +215,27 @@ bool renderTests() {
     uint32_t beforeTransfer=transferred;
     frame(time+53000);
     CHECK(transferred-beforeTransfer<1024);
+    // Network-facing empty/error states use the unchanged production renderer.
+    Model empty;
+    strcpy(empty.agents[0].name,"Codex");
+    ScreenManager networkUi; networkUi.begin(empty,0); networkUi.animation.setMotion(Motion::Off);
+    Renderer networkRenderer(&display);
+    uint32_t networkTime=1000;
+    auto networkFrame=[&](Page page,const char* name) {
+        ++empty.revision; networkUi.go(page,0,1,networkTime);
+        networkUi.update(empty,networkTime); networkRenderer.invalidate();
+        CHECK(networkRenderer.render(networkUi,empty,networkTime));
+        snapshot(display,name); networkTime+=1000; return true;
+    };
+    CHECK(networkFrame(Page::Home,"32-startup-offline"));
+    empty.agents[0].online=true; empty.agents[0].lastUpdate=networkTime;
+    CHECK(networkFrame(Page::Home,"33-usage-unknown"));
+    empty.pc.online=true; empty.pc.lastUpdate=networkTime;
+    CHECK(networkFrame(Page::Pc,"34-gpu-unknown"));
+    CHECK(networkFrame(Page::AgentDetail,"35-agent-usage-unknown"));
+    networkUi.setting=0; CHECK(networkFrame(Page::SettingDetail,"36-wifi-disconnected"));
+    networkUi.notify("COMMAND REJECTED",networkTime);
+    CHECK(networkFrame(Page::AgentDetail,"37-command-rejected"));
     return true;
 }
 int main() {

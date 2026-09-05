@@ -87,15 +87,13 @@ void ScreenManager::input(InputEvent event, Model& m, uint32_t now) {
     int turn = event == InputEvent::ROTATE_RIGHT ? 1 : event == InputEvent::ROTATE_LEFT ? -1 : 0;
     if (event == InputEvent::BACK_LONG) { go(Page::Home, 0, -1, now); return; }
     if (event == InputEvent::PUSH_LONG) {
-        if (page == Page::Home || page == Page::Pc) {
-            sampleRequested = true; notify("MOCK UPDATED", now);
-        } else if (page == Page::AgentDetail) notify("MOCK STOP", now);
+        if (page == Page::AgentDetail) commandRequested = Command::Stop;
         else if (page == Page::Timer) { timer.reset(); notify("TIMER RESET", now); }
         return;
     }
     if (event == InputEvent::CONFIRM_LONG) return;
     if (event == InputEvent::BACK) {
-        if (page == Page::AgentDetail) go(Page::Agents, agent, -1, now);
+        if (page == Page::AgentDetail) { commandRequested = Command::Cancel; go(Page::Agents, agent, -1, now); }
         else if (page == Page::IotDetail) go(Page::Iot, 0, -1, now);
         else if (page == Page::SettingDetail) go(Page::Settings, setting, -1, now);
         else if (page == Page::Launcher) go(Page::Home, 0, -1, now);
@@ -114,21 +112,15 @@ void ScreenManager::input(InputEvent event, Model& m, uint32_t now) {
             go(Page::Launcher, clamp(int(page) + turn, 0, 5), 1, now);
         return;
     }
-    if (!confirm && !push) return;
+    if (push || !confirm) return;
     switch (page) {
-        case Page::Home:
-            if (confirm) { agent = 0; go(Page::AgentDetail, 0, 1, now); }
-            else go(Page::Launcher, 0, 1, now);
-            break;
+        case Page::Home: go(Page::Launcher, 0, 1, now); break;
         case Page::Launcher: go(static_cast<Page>(selected), 0, 1, now); break;
         case Page::Agents: agent = selected; go(Page::AgentDetail, 0, 1, now); break;
         case Page::Iot: go(Page::IotDetail, 0, 1, now); break;
         case Page::Settings: setting = selected; go(Page::SettingDetail, 0, 1, now); break;
-        case Page::Timer:
-            if (confirm) timer.toggle(now);
-            else go(Page::Launcher, 4, -1, now);
-            break;
-        case Page::AgentDetail: notify("MOCK CONFIRM", now); break;
+        case Page::Timer: timer.toggle(now); break;
+        case Page::AgentDetail: commandRequested = Command::Confirm; break;
         case Page::Pc: go(Page::Launcher, 2, -1, now); break;
         default: break;
     }

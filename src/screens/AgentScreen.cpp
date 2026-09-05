@@ -29,7 +29,9 @@ void screens::agents(Canvas& c, const ScreenManager& ui, const Model& m, uint32_
     c.clippedText(2, 38, a.task);
     c.clippedText(2, 50, a.model);
     char text[22];
-    uint32_t reset = a.shortReset > now/1000 ? a.shortReset - now/1000 : 0;
+    if (!a.usageKnown) { c.text(2, 63, "5H --  --:--"); return; }
+    uint32_t elapsed = uint32_t(now - a.usageUpdated) / 1000;
+    uint32_t reset = a.shortReset > elapsed ? a.shortReset - elapsed : 0;
     snprintf(text, sizeof(text), "5H %d%%  %02lu:%02lu", int(lroundf(ui.animation[ShortNumber].value)),
              (unsigned long)(reset/3600), (unsigned long)(reset/60%60));
     c.text(2, 63, text);

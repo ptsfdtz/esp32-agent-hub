@@ -1,137 +1,123 @@
 # Agent Deck
 
-ESP32-S3 桌面 Agent IoT 控制终端。当前完成 **Phase 1 固件实现**：固定硬件、旋钮/按键、六个页面、统一动画、Mock 数据。
-真实 Wi-Fi、MQTT、NTP、OTA 和 PC Bridge 尚未接入；屏幕右上角 `M` 表示 Mock。
+ESP32-S3 桌面 Agent IoT 控制终端，当前固件 **v0.2.0，正式数据全部来自实际通讯**。
+现有六页 UI、字体、伙伴动效、布局、旋钮输入和 33ms 帧调度保持不变。
 
-[查看实际 U8g2 页面与转场像素预览](docs/phase1-preview.png) · [验证记录](docs/validation.md)
+已接入 Wi-Fi、MQTT 双向通信、NTP、带密码 ArduinoOTA、PC Bridge、Codex 真实额度读取，以及 Codex / Claude / OpenCode 真实任务运行器和事件输入。
+没有配置或没有心跳时显示离线；没有真实用量/GPU 数据时显示 `--`，时钟同步前显示 `--:--`。不会切回 Mock。
 
-## 字体与待机伙伴
+[配置与通讯协议](docs/communication.md) · [本轮验证记录](docs/network-validation.md) · [现有 UI 设计](docs/design-v2.md)
 
-新版采用 Helvetica 小字号正文/粗体标题，辅助信息用 5×8，计时使用 ProFont 22 自动居中。
-主页用一对圆润的眼睛和两组用量条；一级菜单为横向图标导航，设置和 Agent 列表采用细圆角选框。
-参考项目与设计取舍见 [新版设计说明](docs/design-v2.md)。
+## 开始使用
 
-首页和 Agent 详情的眼睛会对操作作出不同回应：旋转时左右看，CONFIRM 开心点头，PUSH 好奇睁眼，BACK 眨眼，长按 PUSH/CONFIRM 显示认真表情。
-表情表示收到输入，不代表远程命令执行成功。快速连续操作会从当前视线/位置续接。
-
-首页无操作 20 秒后，待机面板用 200ms 滑入，保留时钟及用量；机器人轻微呼吸、环顾和眨眼。
-45 秒后闭眼打盹。首次旋转或按键只唤醒，下一次操作恢复正常功能；Timer 完成通知也会唤醒。
-FULL 启用这些效果；REDUCED / OFF 保留静态角色并关闭待机面板和表情运动。
-其他页面保持清晰的菜单和数据布局。静止时不会持续 30FPS 传输；眨眼、局部数据变化只发送改变的 tile 区域，大面积切页才发送整屏。
-
-[查看真实渲染帧生成的待机与交互 GIF](docs/buddy-motion.gif)
-
-## 构建
+在仓库根目录执行：
 
 ```powershell
 python -m pip install platformio
-python -m platformio run
+Copy-Item src/config/Secrets.example.h src/config/Secrets.h
+# 编辑 Secrets.h：实际 Wi-Fi、MQTT Broker 和 OTA 密码
+python -m platformio run -e agentdeck
+
+python -m pip install -r bridge/requirements.txt
+python tools/configure_bridge.py --host YOUR_BROKER_IP --device agentdeck-01
+python -m bridge.service --config bridge/config.json
 ```
 
-固定依赖：Espressif32 6.12.0 / Arduino ESP32 2.0.17 / U8g2 2.36.15。
-当前构建目标为 ESP32-S3-DevKitC-1 N8、8MB Flash、不依赖 PSRAM。板卡具体容量需要与实物核对。
-默认 `agentdeck` 使用 UART 串口，适合 CH343；`agentdeck-usb` 使用 ESP32-S3 原生 USB CDC。
+Secrets.h 和 bridge/config.json 已忽略，不提交凭据。Broker 账号通过 Bridge 环境变量 `AGENTDECK_MQTT_USER` / `AGENTDECK_MQTT_PASSWORD` 配置。
+没有 Secrets.h 也可编译，但设备保持离线并提示配置 Wi-Fi。Bridge 使用实际已有的 Broker，不自动部署生产服务。
+
+Codex 额度通过本机已登录的 `codex app-server` 只读读取。正在运行的 Agent 状态需要由实际任务运行器或会话事件接入；不根据账号登录成功推断 Working。
+运行器用法、Claude/OpenCode 接入和控制 handler 约定见[通讯文档](docs/communication.md)。
+
+## 构建和升级
+
+固定依赖：Espressif32 6.12.0 / Arduino ESP32 2.0.17 / U8g2 2.36.15 / PubSubClient 2.8 / ArduinoJson 6.21.5。
+目标 ESP32-S3-DevKitC-1 N8、8MB Flash、不依赖 PSRAM。硬件容量需与实际板卡一致。
 
 ```powershell
-# 确认端口和板卡后烧录；COM7 是开发时发现的 CH343 端口
+# COM7 仅是此前开发记录中的 CH343 端口，使用前核对
 python -m platformio run -e agentdeck -t upload --upload-port COM7
 python -m platformio device monitor -p COM7 -b 115200
-
-# 原生 USB 接口使用此环境
+# 原生 USB CDC 接口
 python -m platformio run -e agentdeck-usb
 ```
 
-固件输出 `.pio/build/agentdeck/firmware.bin`；建议通过 PlatformIO 烧录，以同时写入匹配的 bootloader 和分区表。
-`hardware/hardware.ino` 是保留的原始接线测试，不是产品入口。
+默认 agentdeck 使用 UART，agentdeck-usb 使用原生 USB CDC。
+固件输出 `.pio/build/agentdeck/firmware.bin`。此次启用了明确的 8MB 双 OTA 分区，第一次从旧版升级应使用 USB/UART 全量烧录分区表；之后可以通过 ArduinoOTA 推送。OTA 密码未设置则不启用升级服务。
 
 ## 固定接线
 
 OLED：1.3 英寸 128×64 SH1106，`U8G2_SH1106_128X64_NONAME_F_HW_I2C`，400kHz I2C。
 
-| 信号 | ESP32-S3 |
+| 信号 | GPIO |
 | --- | --- |
-| CON / CONFIRM | GPIO15 |
-| SDA | GPIO8 |
-| SCL | GPIO9 |
-| PSH / PUSH | GPIO6 |
-| TRA | GPIO4 |
-| TRS | GPIO5 |
-| BAK / BACK | GPIO7 |
-| GND | GND |
-| VCC | 3.3V |
+| CONFIRM / CON | 15 |
+| SDA / SCL | 8 / 9 |
+| PUSH / PSH | 6 |
+| 编码器 TRA / TRS | 4 / 5 |
+| BACK / BAK | 7 |
+| 电源 | 3.3V / GND |
 
-输入使用内部上拉、按下接地。若顺时针方向相反，只修改 `src/config/Config.h` 的 `EncoderDirection`；
-若实物编码器每格边沿数不同，核实后调整 `EncoderEdgesPerDetent`，不要交换固定接线。
+输入上拉、按下接地；方向需要修正时只调整 Config.h 的 EncoderDirection。hardware/hardware.ino 仍是保留的原始接线测试，不是产品入口。
 
 ## 操作
 
 | 场景 | 旋钮 | PUSH | CONFIRM | BACK |
 | --- | --- | --- | --- | --- |
-| HOME | 打开页面菜单 | 页面菜单 | Codex 详情 | 保持 HOME |
-| 页面菜单 / AGENT / SETTINGS | 平滑选择与滚动 | 进入 | 进入 | 返回上级 |
-| PC | 页面菜单 | 页面菜单 | 页面菜单 | 页面菜单 |
-| IOT | 页面菜单 | 网络详情 | 网络详情 | 页面菜单 |
-| TIMER | 暂停时 ±1 分钟 | 页面菜单 | 开始/暂停 | 页面菜单 |
+| HOME | 打开页面菜单 | — | 页面菜单 | 保持 HOME |
+| 页面菜单 / AGENT / SETTINGS | 平滑选择 | — | 进入选中项 | 返回上级 |
+| PC | 页面菜单 | — | 页面菜单 | 页面菜单 |
+| IOT | 页面菜单 | — | 网络详情 | 页面菜单 |
+| TIMER | 暂停时 ±1 分钟 | — | 开始/暂停 | 页面菜单 |
 | 亮度 / 动画详情 | 调整值 | — | — | 设置列表 |
-| Agent 详情 | — | Mock confirm 提示 | Mock confirm 提示 | Agent 列表 |
+| Agent 详情 | — | — | 发送人工确认 confirm | 发送 cancel 并返回列表 |
 
-- 长按 BACK：返回 HOME。
-- HOME / PC 长按 PUSH：切换一组 Mock 值，观察 72→80 等平滑变化。
-- Agent 详情长按 PUSH：Mock stop 提示，不发送真实命令。
-- TIMER 长按 PUSH：复位 25 分钟；计时结束显示通知，切换页面仍继续计时。
-- 长按 CONFIRM：已识别并保留，无当前业务动作。
-- 长按门槛 700ms；短按在松开后触发。
+- 菜单统一通过旋钮旋转选择、按下 CONFIRM 进入；短按旋钮 PUSH 不进入。Agent 详情中的 CONFIRM 发送人工确认。
+- 长按 BACK 返回 HOME；Agent 详情长按 PUSH 发送 stop。
+- HOME / PC 长按 PUSH 不再生成数据。Timer 长按 PUSH 复位 25 分钟。
+- 待机首次输入仅唤醒，不发送远程命令；长按门槛仍为 700ms。
+- `COMMAND SENT` 仅表示已发送；收到实际 handler 回执才显示完成；不支持的动作会拒绝，12 秒无回执显示超时。
+- 亮度和动画设置仍保存在 RAM，FULL / REDUCED / OFF 的视觉行为保持原样。
 
-Settings 提供 WiFi、MQTT、Brightness、Animation、Firmware、About。
-FULL 默认；REDUCED 取消位移并缩短数值动画；OFF 关闭动画。亮度和动画设置当前只保存在 RAM，重启恢复默认。
-首页时钟是从 09:42 开始的模拟时钟；Codex 72% / 41%，PC 32 / 61 / 47，网络为模拟在线。
+## 网络与稳定性
 
-## 性能和测试
+Wi-Fi / MQTT / NTP / OTA 在独立 Core 0 任务中处理，主循环通过固定队列零等待交换快照和命令；不共享可变 Model，MQTT callback 不绘制 OLED。
+Wi-Fi 和 MQTT 独立指数退避重连；15 秒没收到实际心跳，Agent / PC 转为离线。Focus Timer 继续使用 millis。
+任务完成事件通过原有 toast 提示，不添加新页面。
 
-统一 33ms 帧调度，只有动画/输入/数据/时间变化时刷新。网络代码不参与 Phase 1。
-设置 → Firmware 显示最近一次帧处理时间；串口发送小写 `s` 输出：
-`frames / render_us / max_us / over_budget / input_overflow / heap / min_heap`。
-串口发送小写 `d` 会检测 GPIO8/GPIO9 上的 OLED 常见 I2C 地址：`0x3C` 和 `0x3D`。
-启动时也会自动输出一次；若 `0x3D` 应答，固件会自动用该地址初始化 SH1106。
-地址探测完成后固件会释放 Wire，再由 U8g2 初始化总线；这是为了避开 Arduino-ESP32 2.0.17 重复初始化硬件 I2C 时可能出现的阻塞。
-`render_us` 包含绘制和 I2C 发送，30 FPS 需要真机验证，不能由编译或主机像素预览推断。
+串口小写 `s` 输出 `frames / render_us / max_us / over_budget / input_overflow / heap / min_heap`。
+小写 `d` 探测 GPIO8/9 上 0x3C / 0x3D。诊断保留原有实现，不要在帧率测试中反复运行 I2C 探测。
+
+## 验证
 
 ```powershell
 python -m pip install ziglang pillow
 python tools/check.py
+python tools/check_network.py
+# 实际 TCP MQTT 本机集成测试，amqtt 仅用于测试
+python -m pip install -r bridge/requirements-test.txt
+python tools/check_mqtt.py
 ```
 
-测试运行真实 C++ 状态机与原版 U8g2 C 绘制代码，覆盖四相抖动/非法跳相/快转、消抖和长按互斥、
-Tween 中断、millis 回绕、Timer、菜单与动效模式、切页中断首帧连续性和静止页面停刷。
-测试同时输出 `build/preview/contact-sheet.png` 及各页原始 128×64 PNG/PBM。
-主机 transport callback 不驱动物理设备，不能代替 OLED 帧率、输入电气和长时间稳定性测试。
+UI 主机测试运行真实状态机和 U8g2 framebuffer；测试用样本仅位于 tests/fixtures，不编入固件。
+通讯测试包含真实 OS 数据采集、TCP Broker、生产 C++ JSON 解析、回执、重复命令、Broker 重启和真实测试任务停止。
+测试 Broker 仅绑定 127.0.0.1 临时端口并在退出时关闭。
 
-真机验收步骤：
+编译和本机通讯测试不能替代真机 Wi-Fi 断网输入手感、OLED 30FPS、OTA 写入/恢复和数小时内存稳定性测试。当前验证范围见[验证记录](docs/network-validation.md)。
 
-1. 检查正反旋转每格仅移动一项，快速反复旋转没有反向误判；`input_overflow=0`。
-2. 每个键重复短按、长按；一次长按不会在释放后多执行一次短按。
-3. 来回打开页面菜单、详情，切页未结束前按 BACK，画面连续无闪跳。
-4. SETTINGS 滚动到 About，再反向回 WiFi，检查选框和文字平滑且无越界。
-5. HOME 长按 PUSH 观察数字/进度更新；测试 FULL/REDUCED/OFF。
-6. TIMER 运行时切换页面，回来确认时间；测试暂停、复位和完成通知。
-7. 连续动画时记录帧数/实际时间，检查单帧 33ms 预算。默认保持 400kHz，不先超频。
-8. 连续运行至少数小时，多次采样 heap/min_heap 和输入溢出。MQTT 故障场景待 Phase 2 实现后验收。
-
-## 工程结构
+## 目录
 
 ```text
-src/
-  main.cpp                主循环与接线
-  config/Config.h         引脚、节拍、网络配置结构
-  hardware/               SH1106、输入中断与 GPIO
-  input/                  InputEvent、四相解码、按键状态机
-  models/Model.h          Agent / PC / Network / Device
-  services/MockService.*  模拟数据源
-  ui/                     AnimationManager、FrameScheduler、ScreenManager、Renderer、Timer
-  screens/                HOME、AGENT、PC、IOT、TIMER、SETTINGS 和共享绘制
-tests/host.cpp            核心行为和实际 framebuffer 验证
-tools/check.py            主机构建、测试、像素预览生成
-docs/architecture.md     工程审查、动画/帧率设计、MQTT 隔离和阶段路线
+src/config/       固定参数、实际网络配置入口
+src/hardware/     OLED / GPIO / 编码器中断
+src/input/        输入事件、消抖、四相状态机
+src/models/       实际 Agent / PC / 网络 / 设备状态
+src/network/      Core 0 网络任务、JSON 协议、重连退避
+src/ui/           原有动画、帧调度、页面状态、Renderer、Timer
+src/screens/      原有六页布局，绑定真实 Model
+bridge/           PC 监控、Codex 额度、任务运行器、真实事件输入、命令处理
+tests/           UI / 协议 / Bridge 测试（fixtures 仅限测试）
+tools/            构建验证、配置生成、本机 MQTT 集成测试
 ```
 
-详细设计和第一阶段改动理由见 [工程审查与架构](docs/architecture.md)。
+原始设计保留在 AGENT.md。docs/architecture.md、docs/validation.md 中的 Phase 1 描述是历史记录，当前联网实现以本 README 与 communication.md 为准。

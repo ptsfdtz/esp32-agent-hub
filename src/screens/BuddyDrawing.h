@@ -31,8 +31,9 @@ inline void standby(Canvas& c,const ScreenManager& ui,const Model& model,uint32_
     c.clip(16,64);c.color(0);c.box(0,top,128,48);c.color(1);
     eyes(c,ui,64,top+19,24);
     char text[24];
-    if(fresh(model.agents[0].online,model.agents[0].lastUpdate,now))
+    if(fresh(model.agents[0].online,model.agents[0].lastUpdate,now) && model.agents[0].usageKnown)
         snprintf(text,sizeof(text),"5h %u%%  /  week %u%%",model.agents[0].shortUsage,model.agents[0].weeklyUsage);
+    else if(fresh(model.agents[0].online,model.agents[0].lastUpdate,now)) snprintf(text,sizeof(text),"5h --  /  week --");
     else snprintf(text,sizeof(text),"Codex offline");
     c.small();c.center(top+46,text);c.font();c.unclip();
 }

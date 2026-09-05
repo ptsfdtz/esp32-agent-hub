@@ -39,7 +39,7 @@ if stale:
     with ThreadPoolExecutor(max_workers=4) as pool:
         list(pool.map(compile_c, stale))
 cpp = [ROOT / "tests/host.cpp", ROOT / "src/ui/ScreenManager.cpp",
-       ROOT / "src/ui/Renderer.cpp", ROOT / "src/services/MockService.cpp"]
+       ROOT / "src/ui/Renderer.cpp", ROOT / "tests/fixtures/MockService.cpp"]
 cpp += sorted((ROOT / "src/screens").glob("*.cpp"))
 exe = BUILD / ("check.exe" if os.name == "nt" else "check")
 compile_command(ZIG + ["c++", "-std=c++17", "-O1", "-Wall", "-Wextra",

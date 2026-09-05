@@ -4,12 +4,15 @@
 struct AgentStatus {
     char name[16] = "";
     bool online = false, working = false;
+    bool usageKnown = false;
     uint8_t shortUsage = 0, weeklyUsage = 0;
-    uint32_t shortReset = 0, weeklyReset = 0, lastUpdate = 0;
+    uint32_t shortReset = 0, weeklyReset = 0, lastUpdate = 0, usageUpdated = 0;
+    uint32_t completedAt = 0;
     char model[32] = "", task[80] = "";
 };
 struct PcStatus {
     bool online = false;
+    bool gpuKnown = false;
     uint8_t cpu = 0, ram = 0, gpu = 0;
     uint32_t downKbps = 0, lastUpdate = 0;
 };
@@ -20,9 +23,11 @@ struct NetworkStatus {
     uint16_t latencyMs = 0;
 };
 struct DeviceStatus {
-    bool mock = true, otaReady = false;
+    bool otaReady = false;
     uint8_t contrast = 160;
     uint32_t frames = 0, lastRenderUs = 0, maxRenderUs = 0, overBudget = 0;
+    bool timeSynced = false;
+    uint16_t clockMinutes = 0;
 };
 struct Model {
     AgentStatus agents[3];

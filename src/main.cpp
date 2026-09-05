@@ -1,13 +1,14 @@
 #include <Arduino.h>
 #include "hardware/Display.h"
 #include "hardware/Input.h"
-#include "services/MockService.h"
+#include "network/NetworkService.h"
+#include "config/RuntimeConfig.h"
 #include "ui/Renderer.h"
 
 Display oled;
 Input input;
 Model model;
-MockService mock;
+NetworkService network;
 ScreenManager ui;
 Renderer renderer(oled.canvas.getU8g2());
 
@@ -21,8 +22,11 @@ void setup() {
     oled.begin(&Serial);
     Serial.println("Agent Deck booted. Send d for OLED/I2C diagnostics; s for render diagnostics.");
     oled.reportI2c(Serial);
-    mock.begin(model, millis());
+    strcpy(model.agents[0].name, "Codex");
+    strcpy(model.agents[1].name, "Claude");
+    strcpy(model.agents[2].name, "OpenCode");
     ui.begin(model, millis());
+    if (!network.begin(config::networkConfig())) ui.notify("NETWORK START FAILED", millis());
 }
 void loop() {
     uint32_t now = millis();
@@ -31,9 +35,31 @@ void loop() {
         auto event = input.poll(now);
         if (event == InputEvent::NONE) break;
         ui.input(event, model, now);
+        if (ui.commandRequested != ScreenManager::Command::None) {
+            const char* action = ui.commandRequested == ScreenManager::Command::Confirm ? "confirm" :
+                ui.commandRequested == ScreenManager::Command::Cancel ? "cancel" : "stop";
+            if (!model.network.mqtt || !fresh(model.agents[ui.agent].online, model.agents[ui.agent].lastUpdate, now))
+                ui.notify("AGENT OFFLINE", now);
+            else if (!network.command(ui.agent, action, now)) ui.notify("COMMAND QUEUE FULL", now);
+            ui.commandRequested = ScreenManager::Command::None;
+        }
     }
-    mock.update(model, now);
-    if (ui.sampleRequested) { mock.changeSample(model, now); ui.sampleRequested = false; }
+    NetworkService::Snapshot snapshot;
+    if (network.receive(snapshot)) {
+        memcpy(model.agents, snapshot.agents, sizeof(model.agents));
+        model.pc = snapshot.pc; model.network = snapshot.network;
+        model.device.otaReady = snapshot.otaReady; model.device.timeSynced = snapshot.timeSynced;
+        model.device.clockMinutes = snapshot.minutes; ++model.revision;
+    }
+    NetworkService::Event event;
+    for (int i = 0; i < 8 && network.event(event); ++i) {
+        if (event.kind == NetworkService::Event::Notice) ui.notify(event.text, now);
+        else {
+            if (event.contrast >= 0) model.device.contrast = event.contrast;
+            if (event.motion >= 0) ui.animation.setMotion(static_cast<Motion>(event.motion));
+            ++model.revision;
+        }
+    }
     static uint8_t contrast = 160;
     if (contrast != model.device.contrast) { contrast = model.device.contrast; oled.contrast(contrast); }
     if (ui.update(model, now)) renderer.invalidate();

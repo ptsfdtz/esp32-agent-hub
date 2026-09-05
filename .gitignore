@@ -3,4 +3,5 @@
 __pycache__/
 src/config/Secrets.h
 build/
-
+bridge/config.json
+bridge/.state/
