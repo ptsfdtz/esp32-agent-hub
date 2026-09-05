@@ -123,43 +123,90 @@ pub fn parse_rate_limits(result: &Value, now: i64) -> Option<Value> {
 pub struct UsageCache {
     inner: Arc<Mutex<Option<(i64, Value)>>>,
     reachable: Arc<AtomicBool>,
+    working: Arc<AtomicBool>,
+}
+fn refresh_due(idle: bool, was_idle: bool, has_sample: bool, due: bool) -> bool {
+    if idle && has_sample {
+        false
+    } else {
+        due || (was_idle && !idle)
+    }
 }
 impl UsageCache {
     pub fn start(command: Option<Vec<String>>, stop: Arc<AtomicBool>) -> Self {
         let cache = Self {
             inner: Arc::new(Mutex::new(None)),
             reachable: Arc::new(AtomicBool::new(false)),
+            working: Arc::new(AtomicBool::new(false)),
         };
         if let Some(command) = command {
-            let target = cache.inner.clone();
+            let target = cache.clone();
             let reachable = cache.reachable.clone();
             thread::spawn(move || {
+                let mut next = Instant::now();
+                let mut was_idle = false;
                 while !stop.load(Ordering::Relaxed) {
-                    let result = query_codex(&command).unwrap_or((false, None));
-                    reachable.store(result.0, Ordering::Relaxed);
-                    *target.lock().unwrap() = result.1.map(|v| (unix_time(), v));
-                    for _ in 0..60 {
-                        if stop.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        thread::sleep(Duration::from_secs(1));
+                    let idle = !target.working.load(Ordering::Relaxed);
+                    let has_sample = target.inner.lock().unwrap().is_some();
+                    let refresh = refresh_due(idle, was_idle, has_sample, Instant::now() >= next);
+                    if idle != was_idle {
+                        eprintln!(
+                            "Codex usage polling {}",
+                            if idle {
+                                "paused: no active Codex task"
+                            } else {
+                                "resumed: Codex task active"
+                            }
+                        );
                     }
+                    was_idle = idle;
+                    if !refresh {
+                        thread::sleep(Duration::from_secs(1));
+                        continue;
+                    }
+                    let result = query_codex(&command).unwrap_or_else(|e| {
+                        eprintln!("Codex usage query failed: {e}");
+                        (false, None)
+                    });
+                    reachable.store(result.0, Ordering::Relaxed);
+                    let success = result.1.is_some();
+                    target.record(result.1, unix_time());
+                    if !success {
+                        eprintln!(
+                            "Codex usage unavailable; retaining last measurement, retrying in 5s"
+                        );
+                    }
+                    next = Instant::now() + Duration::from_secs(if success { 60 } else { 5 });
                 }
             });
         }
         cache
     }
+    pub fn set_working(&self, working: bool) {
+        self.working.store(working, Ordering::Relaxed);
+    }
     pub fn reachable(&self) -> bool {
         self.reachable.load(Ordering::Relaxed)
     }
+    fn record(&self, value: Option<Value>, measured: i64) {
+        // Preserve the last real measurement and its original timestamp on failure or idle.
+        if let Some(value) = value {
+            *self.inner.lock().unwrap() = Some((measured, value));
+        }
+    }
     pub fn sample(&self) -> Option<Value> {
+        self.sample_at(unix_time())
+    }
+    fn sample_at(&self, now: i64) -> Option<Value> {
         let guard = self.inner.lock().ok()?;
         let (measured, value) = guard.as_ref()?;
-        let elapsed = unix_time() - *measured;
-        if elapsed > 120 {
+        let elapsed = now - *measured;
+        if elapsed < 0 {
             return None;
         }
         let mut out = value.clone();
+        out["measured_at"] = json!(measured);
+        out["cache_age_seconds"] = json!(elapsed);
         for key in ["five_hour_reset", "weekly_reset"] {
             if let Some(v) = out[key].as_i64() {
                 out[key] = json!(v.saturating_sub(elapsed).max(0));
@@ -230,6 +277,31 @@ fn query_codex(argv: &[String]) -> anyhow::Result<(bool, Option<Value>)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_refresh_preserves_last_measurement_and_its_age() {
+        let cache = UsageCache::start(None, Arc::new(AtomicBool::new(false)));
+        cache.record(
+            Some(json!({"five_hour":27,"weekly":17,"five_hour_reset":1000,"weekly_reset":2000})),
+            1000,
+        );
+        cache.record(None, 1060);
+        assert_eq!(cache.sample_at(1065).unwrap()["five_hour"], 27);
+        assert_eq!(cache.sample_at(1065).unwrap()["five_hour_reset"], 935);
+        assert_eq!(cache.sample_at(4600).unwrap()["five_hour"], 27);
+        assert_eq!(cache.sample_at(4600).unwrap()["measured_at"], 1000);
+        assert_eq!(cache.sample_at(4600).unwrap()["cache_age_seconds"], 3600);
+        assert_eq!(cache.sample_at(4600).unwrap()["five_hour_reset"], 0);
+        cache.record(Some(json!({"five_hour":28,"weekly":18})), 1122);
+        assert_eq!(cache.sample_at(1123).unwrap()["five_hour"], 28);
+    }
+    #[test]
+    fn idle_pauses_queries_and_task_resumes_immediately() {
+        assert!(!refresh_due(true, false, true, true));
+        assert!(!refresh_due(true, true, true, true));
+        assert!(refresh_due(false, true, true, false));
+        assert!(!refresh_due(false, false, true, false));
+        assert!(refresh_due(true, true, false, true));
+    }
     #[test]
     fn official_windows_only() {
         let v = json!({"rateLimits":{"primary":{"windowDurationMins":300,"usedPercent":22,"resetsAt":1100},"secondary":{"windowDurationMins":10080,"usedPercent":45,"resetsAt":2100}}});

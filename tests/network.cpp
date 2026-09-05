@@ -31,6 +31,9 @@ int main(int argc, char**) {
     assert(m.agents[0].completedAt == 2000);
     assert(apply("agent/codex/usage", R"({"five_hour":42.5,"weekly":20,"five_hour_reset":123,"weekly_reset":456})"));
     assert(m.agents[0].shortUsage == 42 && m.agents[0].usageKnown && m.agents[0].usageUpdated == 1000);
+    // Regression: usage appeared only before NTP because Bridge omitted envelope ts.
+    assert(!apply("agent/codex/usage", R"({"five_hour":42.5,"weekly":20,"five_hour_reset":123,"weekly_reset":456})", 2000));
+    assert(apply("agent/codex/usage", R"({"five_hour":42.5,"weekly":20,"five_hour_reset":123,"weekly_reset":456,"measured_at":1000,"cache_age_seconds":1000,"ts":2000})", 2000));
     assert(!apply("agent/codex/usage", R"({"five_hour":101,"weekly":20,"five_hour_reset":123,"weekly_reset":456})"));
     assert(m.agents[0].shortUsage == 42);
     assert(!apply("agent/codex/usage", R"({"five_hour":50,"weekly":-1,"five_hour_reset":123,"weekly_reset":456})"));

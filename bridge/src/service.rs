@@ -222,6 +222,7 @@ pub fn run(cfg: Config, stop: Arc<AtomicBool>) -> Result<()> {
         }
     });
     let usage = UsageCache::start(cfg.codex_usage_command.clone(), stop.clone());
+    let mut activity = crate::activity::CodexActivity::default();
     let mut metrics = PcMetrics::new();
     let mut next = Instant::now();
     while !stop.load(Ordering::Relaxed) {
@@ -236,6 +237,14 @@ pub fn run(cfg: Config, stop: Arc<AtomicBool>) -> Result<()> {
             );
             for agent in AGENTS {
                 let (mut status, state_usage) = read_state(&cfg.state_dir, agent, unix_time());
+                if agent == "codex" {
+                    if let Some(observed) = activity.sample(unix_time()) {
+                        if !status["working"].as_bool().unwrap_or(false) {
+                            status = observed;
+                        }
+                    }
+                    usage.set_working(status["working"].as_bool().unwrap_or(false));
+                }
                 if agent == "codex"
                     && !status["online"].as_bool().unwrap_or(false)
                     && usage.reachable()
@@ -248,8 +257,11 @@ pub fn run(cfg: Config, stop: Arc<AtomicBool>) -> Result<()> {
                 } else {
                     state_usage
                 };
-                let usage_body =
+                let mut usage_body =
                     agent_usage.unwrap_or_else(|| json!({"available":false,"ts":unix_time()}));
+                // Transport freshness is separate from measured_at/cache_age_seconds.
+                // The device rejects messages without ts once NTP has synchronized.
+                usage_body["ts"] = json!(unix_time());
                 let _ = client.publish(
                     format!("agent/{agent}/status"),
                     QoS::AtMostOnce,

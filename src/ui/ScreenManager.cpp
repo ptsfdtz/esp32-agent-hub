@@ -32,7 +32,8 @@ bool ScreenManager::update(const Model& m, uint32_t now) {
     bool completedBefore = timer.complete;
     timer.update(now);
     if (timer.complete && !completedBefore) notify("FOCUS COMPLETE", now);
-    dirty_ |= buddy.update(animation, now, page == Page::Home && !toast[0]);
+    bool working = fresh(m.agents[0].online, m.agents[0].lastUpdate, now) && m.agents[0].working;
+    dirty_ |= buddy.update(animation, now, page == Page::Home && !toast[0] && !working);
     if (page == Page::Timer && secondsBefore != timer.seconds()) dirty_ = true;
     if (revision_ != m.revision) { sync(m, now); dirty_ = true; }
     // Time-dependent screens need at most 1 Hz when all tweens are idle.
@@ -41,7 +42,6 @@ bool ScreenManager::update(const Model& m, uint32_t now) {
         if (page == Page::Home || page == Page::AgentDetail || page == Page::Iot ||
             page == Page::Pc || page == Page::Agents || page == Page::SettingDetail) dirty_ = true;
     }
-    bool working = fresh(m.agents[0].online, m.agents[0].lastUpdate, now) && m.agents[0].working;
     if (animation.motion == Motion::Full && working &&
         (page == Page::Home || (page == Page::AgentDetail && agent == 0)) && pulse_ != now / 500) {
         pulse_ = now / 500; dirty_ = true;

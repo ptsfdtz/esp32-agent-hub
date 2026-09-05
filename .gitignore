@@ -6,3 +6,4 @@ build/
 bridge/config.json
 bridge/.state/
 bridge/target/
+launcher/target/

@@ -201,7 +201,9 @@ bool renderTests() {
             snapshot(display,name);
         }
     };
-    movie(time+19900,190); CHECK(ui.buddy.idle);
+    movie(time+19900,190); CHECK(!ui.buddy.idle); // active task stays visible without rotary input
+    m.agents[0].working=false; ++m.revision;
+    movie(time+27000,20); CHECK(ui.buddy.idle);
     snapshot(display,"25-idle-breathing");
     movie(time+45000,35); CHECK(ui.buddy.sleeping); snapshot(display,"26-idle-sleep");
     ui.input(InputEvent::CONFIRM,m,time+47000);

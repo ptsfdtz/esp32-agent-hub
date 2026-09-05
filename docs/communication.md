@@ -80,7 +80,9 @@ your-real-event-adapter | bridge/target/release/agentdeck-bridge feed --agent cl
 
 每行包含真实 `online`、`working`，可包含 `task`、`model`、`usage`、`completed_at`。feed 按接收时间增加 `ts`，原子写入状态文件。生产者必须每 1–5 秒提供当前实际状态/心跳；15 秒没更新就离线。`usage` 的字段见下表，其值必须来自提供商数据，不能估算或填样例。`completed_at` 是实际成功完成事件的 Unix 秒时间戳。
 
-默认不会附着或接管已经打开的 IDE 会话。要监控其真实任务与审批，需要把该会话自己的事件/控制接口接到此输入和 handler；仅启动 Bridge 不会凭空获得 Claude / OpenCode 的账户额度。中文文本按 UTF-8 字节安全截断，但当前 OLED 字库是否显示对应汉字仍受现有字体限制。
+Codex 会话现默认通过本机 `CODEX_HOME/sessions`（默认 `~/.codex/sessions`）的真实 `task_started` / `task_complete` / `turn_aborted` 事件只读监控，识别 IDE 中的任务和模型；不接管会话、不发送对话正文，不授予远程审批能力。最多观察最近 16 个活跃日志，连续 5 分钟没有日志更新时不继续宣称任务正在工作。它依赖本机 Codex 日志格式，长时间无日志输出的工具调用可能暂时显示空闲。Claude/OpenCode 和审批控制仍需各自的事件/控制接口。
+
+额度启动时查询一次；Codex 工作期间每分钟查询，任务重新开始后立即查询，空闲期间暂停查询并通过 MQTT 继续发送最后一次真实额度。读取失败也保留上次值，`measured_at` / `cache_age_seconds` 标记原始采样时间与缓存年龄；当前固件仅显示百分比，缓存不代表实时数值。进程重启后需要重新读取一次，缓存暂不落盘。中文显示仍受 OLED 字库限制。
 
 ## 4. 双向控制和回执
 

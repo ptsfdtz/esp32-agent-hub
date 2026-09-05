@@ -10,6 +10,20 @@ ESP32-S3 桌面 Agent IoT 控制终端，当前固件 **v0.3.0，正式数据全
 
 ## 开始使用
 
+### Windows 单 EXE
+
+双击 `AgentDeck.exe` 即可。内置 Bridge、Mosquitto 和所需 DLL，自动解包到 `%LOCALAPPDATA%\AgentDeck` 并隐藏运行，自动注册当前用户登录自启。无需安装 Rust、Python 或单独启动 MQTT。重复双击不会启动第二份。Codex 额度需要本机已安装并登录 Codex；新设备仍需首次 BLE 配网，MQTT 指向电脑局域网 IP 的 **1884** 端口。
+
+本地编译：`powershell -ExecutionPolicy Bypass -File tools/build-exe.ps1`，输出 `build/dist/AgentDeck.exe`。构建机器需 Rust/MSVC 与 Mosquitto（默认 `C:\Program Files\mosquitto`，可用 `-MosquittoDirectory` 指定）。已有配置在首次运行时从 EXE 所在目录及上级项目目录迁移，不会打入发布包。运行配置在 `%LOCALAPPDATA%\AgentDeck\bridge\config.json`，日志在同目录 `.state` 中。
+
+GitHub Actions 在 push / PR 时编译固件、运行 UI 和 Rust 测试，并打包、启动验证 EXE 和进程恢复。Actions 的 `AgentDeck-Windows-x64` 产物包含单 EXE；推送 `v*` 标签后自动发布 Release，附带 EXE 与固件文件。EXE 不会自动烧录设备。
+
+升级前在任务管理器结束 AgentDeck 及其 PowerShell、Bridge/Mosquitto 子进程，再运行新版。取消登录自启的命令见下方。
+
+当前 Windows 本机使用 `bridge/mosquitto.local.conf` 的 1884 端口。已有固件与配置时，执行一次 `powershell -ExecutionPolicy Bypass -File tools/install-background.ps1` 安装当前用户登录自启。后台守护每 5 秒检查 MQTT Broker 和 Bridge，退出后自动启动，无需保留终端。网络中断由固件和 Bridge 自动重连。日志位于 `bridge/.state/`。这台电脑需保持原有局域网地址，设备才能连接；可在路由器设置 DHCP 地址保留。
+
+取消登录自启：`Remove-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run -Name AgentDeckBackground`（当前后台进程仍会继续运行）。
+
 在仓库根目录执行：
 
 ```powershell
@@ -94,6 +108,8 @@ Wi-Fi 和 MQTT 独立指数退避重连；15 秒没收到实际心跳，Agent / 
 小写 `d` 探测 GPIO8/9 上 0x3C / 0x3D。诊断保留原有实现，不要在帧率测试中反复运行 I2C 探测。
 
 ## 验证
+
+最新状态显示修复与 COM7 实机记录见 [实机状态验证](docs/hardware-status-validation.md)。串口 `q` 读取当前状态，`f` 导出 OLED 缓冲；仅按需调用，导出期间有串口开销。
 
 ```powershell
 python -m pip install ziglang pillow

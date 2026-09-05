@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod config;
 pub mod provision;
 pub mod service;
