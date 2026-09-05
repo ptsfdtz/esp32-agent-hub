@@ -3,39 +3,37 @@
 #include "ui/ScreenManager.h"
 
 namespace buddyDrawing {
-inline void robot(Canvas& c, const ScreenManager& ui, int x, int y, int scale) {
-    int lift = int(lroundf(ui.animation[BuddyLift].value));
-    int look = int(lroundf(ui.animation[BuddyLook].value));
-    y += lift;
-    auto pixel = [&](int px,int py,int w,int h) { c.box(x+px*scale,y+py*scale,w*scale,h*scale); };
-    // Tiny friendly terminal, with ears and little feet. No sprite allocation.
-    pixel(1,0,2,2); pixel(13,0,2,2);
-    pixel(2,2,12,1); pixel(0,4,1,6); pixel(15,4,1,6);
-    pixel(1,3,1,1); pixel(14,3,1,1);
-    pixel(1,10,14,1); pixel(3,11,3,1); pixel(10,11,3,1);
-    bool shut = ui.animation[BuddyLid].value > .55f;
-    auto eyes = [&](int ex, bool wink) {
-        if (shut || wink) pixel(ex,6,3,1);
-        else if (ui.buddy.expression == Expression::Happy) {
-            pixel(ex,6,1,1); pixel(ex+1,5,1,1); pixel(ex+2,6,1,1);
-        } else pixel(ex+1+look,5,1,ui.buddy.expression == Expression::Curious ? 3 : 2);
-    };
-    eyes(3,false); eyes(9,ui.buddy.expression == Expression::Wink);
-    pixel(7,8,2,1);
-    if (ui.buddy.expression == Expression::Hold) pixel(6,7,4,1);
+// Eye dimensions interpolate continuously; no bitmap frame switching.
+inline void eyes(Canvas& c,const ScreenManager& ui,int center,int cy,int size) {
+    float lid=ui.animation[BuddyLid].value, smile=ui.animation[BuddySmile].value;
+    float curious=ui.animation[BuddyCurious].value, wink=ui.animation[BuddyWink].value;
+    float focus=ui.animation[BuddyFocus].value;
+    int gaze=int(lroundf(ui.animation[BuddyLook].value*size/10));
+    int lift=int(lroundf(ui.animation[BuddyLift].value));
+    for(int i=0;i<2;++i) {
+        float closed=lid+(1-lid)*(i?wink:0);
+        int h=int(lroundf((size+curious*3)*(1-closed)*(1-.55f*focus)));
+        h=h<2?2:h;
+        int x=center+(i?size/4:-size-size/4)+gaze;
+        int y=cy-h/2+lift;
+        c.rounded(x,y,size,h,size/4);
+        if(smile>.01f && h>3) {
+            c.color(0);
+            c.rounded(x-1,y+h-int(lroundf(smile*h*.60f)),size+2,h,size/3);
+            c.color(1);
+        }
+    }
 }
-inline void header(Canvas& c, const ScreenManager& ui) {
-    robot(c, ui, 98, 2, 1);
-}
-inline void standby(Canvas& c, const ScreenManager& ui, const Model& model) {
-    float reveal = ui.animation[IdleReveal].value;
-    if (reveal <= 0) return;
-    int top = 64 - int(lroundf(48 * reveal));
-    c.clip(16,64); c.color(0); c.box(0,top,128,48); c.color(1);
-    robot(c,ui,46,top+5,2);
-    if (ui.buddy.sleeping) c.text(85,top+13,"zZ");
-    char text[22];
-    snprintf(text,sizeof(text),"5h %u%%   wk %u%%",model.agents[0].shortUsage,model.agents[0].weeklyUsage);
-    c.center(top+46,text); c.unclip();
+inline void standby(Canvas& c,const ScreenManager& ui,const Model& model,uint32_t now) {
+    float reveal=ui.animation[IdleReveal].value;
+    if(reveal<=0) return;
+    int top=64-int(lroundf(48*reveal));
+    c.clip(16,64);c.color(0);c.box(0,top,128,48);c.color(1);
+    eyes(c,ui,64,top+19,24);
+    char text[24];
+    if(fresh(model.agents[0].online,model.agents[0].lastUpdate,now))
+        snprintf(text,sizeof(text),"5h %u%%  /  week %u%%",model.agents[0].shortUsage,model.agents[0].weeklyUsage);
+    else snprintf(text,sizeof(text),"Codex offline");
+    c.small();c.center(top+46,text);c.font();c.unclip();
 }
 }

@@ -1,7 +1,8 @@
 #include "Screens.h"
+#include "BuddyDrawing.h"
 void screens::agents(Canvas& c, const ScreenManager& ui, const Model& m, uint32_t now) {
     if (ui.page == Page::Agents) {
-        header(c, "AGENTS", ui, m);
+        header(c, "Agents", ui, m);
         const char* labels[] = {m.agents[0].name, m.agents[1].name, m.agents[2].name};
         menu(c, ui, labels, 3);
         // Status stays outside the selection box. Circles cannot use XOR:
@@ -13,9 +14,8 @@ void screens::agents(Canvas& c, const ScreenManager& ui, const Model& m, uint32_
     const auto& a = m.agents[ui.agent];
     header(c, a.name, ui, m);
     bool online = fresh(a.online, a.lastUpdate, now);
-    c.text(2, 25, online ? a.working ? "WORKING" : "IDLE" : "OFFLINE");
-    int radius = ui.animation.motion == Motion::Full && a.working && (now/500)%4 == 1 ? 3 : 2;
-    c.dot(121, 21, online, radius);
+    c.text(4, 25, online ? a.working ? "Working" : "Ready" : "Offline");
+    buddyDrawing::eyes(c,ui,107,24,8);
     if (!online) {
         if (!a.lastUpdate) c.text(2, 43, "No data received");
         else {

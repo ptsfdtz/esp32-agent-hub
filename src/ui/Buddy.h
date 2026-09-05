@@ -50,6 +50,10 @@ public:
                 a.target(BuddyLid, sleeping || (cycle >= 4700 && cycle < 4900) ? 1 : 0, 100, now, true);
             }
         }
+        a.target(BuddySmile, expression==Expression::Happy?1:0,150,now,true);
+        a.target(BuddyCurious, expression==Expression::Curious?1:0,150,now,true);
+        a.target(BuddyWink, expression==Expression::Wink?1:0,150,now,true);
+        a.target(BuddyFocus, expression==Expression::Hold?1:0,150,now,true);
         return oldExpression != expression || oldSleep != sleeping || oldIdle != idle;
     }
 private:

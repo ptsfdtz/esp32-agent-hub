@@ -9,6 +9,31 @@ class Canvas {
 public:
     explicit Canvas(u8g2_t* target) : target_(target) {}
     void font(bool large = false) { u8g2_SetFont(target_, large ? typography::number() : typography::body()); }
+    void title() { u8g2_SetFont(target_, typography::title()); }
+    void small() { u8g2_SetFont(target_, typography::small()); }
+    int width(const char* text) { return u8g2_GetStrWidth(target_, text); }
+    void centeredAt(int x,int y,const char* text) { this->text(x-width(text)/2,y,text); }
+    void line(int x,int y,int xx,int yy) {
+        int dx=abs(xx-x), sx=x<xx?1:-1, dy=-abs(yy-y), sy=y<yy?1:-1, err=dx+dy;
+        for (;;) { box(x,y,1,1); if(x==xx && y==yy) break;
+            int e=2*err; if(e>=dy){err+=dy;x+=sx;} if(e<=dx){err+=dx;y+=sy;}}
+    }
+    // Signed clipping permits icons to enter from outside the OLED edges.
+    void rounded(int x,int y,int w,int h,int r,bool fill=true) {
+        if(w<=0 || h<=0) return;
+        r = r>w/2?w/2:r; r=r>h/2?h/2:r;
+        for(int row=0;row<h;++row) {
+            int edge=row<r?r-row-1:row>=h-r?row-(h-r):0;
+            int inset=r ? r-int(sqrtf(float(r*r-edge*edge))) : 0;
+            if(fill || row==0 || row==h-1) box(x+inset,y+row,w-2*inset,1);
+            else {box(x+inset,y+row,1,1);box(x+w-inset-1,y+row,1,1);}
+        }
+    }
+    void meter(int x,int y,int w,float percent) {
+        box(x,y+2,w,1);
+        int fill=int(lroundf(w*percent/100)); fill=fill<0?0:fill>w?w:fill;
+        rounded(x,y,fill,4,2);
+    }
     void center(int y, const char* text) { this->text((128 - int(u8g2_GetStrWidth(target_, text)))/2, y, text); }
     void text(int x, int y, const char* text) { u8g2_DrawStr(target_, x, y, text); }
     void right(int y, const char* text) { this->text(126 - u8g2_GetStrWidth(target_, text), y, text); }

@@ -36,7 +36,8 @@ private:
 
 enum Tween { Selection, Scroll, ShortBar, WeekBar, ShortNumber, WeekNumber,
              Cpu, Ram, Gpu, PageSlide, Title, Toast,
-             BuddyLook, BuddyLift, BuddyLid, IdleReveal, TweenCount };
+             BuddyLook, BuddyLift, BuddyLid, IdleReveal,
+             BuddySmile, BuddyCurious, BuddyWink, BuddyFocus, TweenCount };
 class AnimationManager {
 public:
     Animation tracks[TweenCount];

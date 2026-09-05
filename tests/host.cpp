@@ -84,6 +84,20 @@ bool coreTests() {
 }
 
 uint8_t noop(u8x8_t*,uint8_t,uint8_t,void*) { return 1; }
+uint8_t physical[1024]{};
+uint32_t transferred=0;
+u8x8_msg_cb realDisplayCallback;
+uint8_t captureDisplay(u8x8_t* d,uint8_t msg,uint8_t count,void* data) {
+    if(msg==U8X8_MSG_DISPLAY_DRAW_TILE) {
+        auto* tile=static_cast<u8x8_tile_t*>(data);
+        for(int i=0;i<count;++i) {
+            assert(tile[i].x_pos+tile[i].cnt<=16 && tile[i].y_pos<8);
+            memcpy(physical+tile[i].y_pos*128+tile[i].x_pos*8,tile[i].tile_ptr,tile[i].cnt*8);
+            transferred+=tile[i].cnt*8;
+        }
+    }
+    return realDisplayCallback(d,msg,count,data);
+}
 void snapshot(u8g2_t& display, const char* name) {
     fs::create_directories("build/preview");
     char path[160]; snprintf(path,sizeof(path),"build/preview/%s.pbm",name);
@@ -97,8 +111,16 @@ bool renderTests() {
     u8g2_t display;
     u8g2_Setup_sh1106_128x64_noname_f(&display,U8G2_R0,noop,noop);
     u8g2_InitDisplay(&display); u8g2_SetPowerSave(&display,0); u8g2_SetFontMode(&display,1);
+    realDisplayCallback=display.u8x8.display_cb;display.u8x8.display_cb=captureDisplay;
     Model m; MockService mock; mock.begin(m,0); ScreenManager ui; ui.begin(m,0); Renderer renderer(&display);
-    auto frame=[&](uint32_t now) { mock.update(m,now); if(ui.update(m,now)) renderer.invalidate(); return renderer.render(ui,m,now); };
+    auto frame=[&](uint32_t now) {
+        mock.update(m,now);if(ui.update(m,now)) renderer.invalidate();
+        bool rendered=renderer.render(ui,m,now);
+        // The emulated OLED must match RAM after every partial/full update,
+        // including erased areas, interrupted transitions and blinking.
+        assert(memcmp(physical,u8g2_GetBufferPtr(&display),1024)==0);
+        return rendered;
+    };
     frame(0); frame(500); snapshot(display,"01-home");
     CHECK(u8g2_GetBufferSize(&display)==1024);
     uint8_t before[1024]; memcpy(before,u8g2_GetBufferPtr(&display),1024);
@@ -159,6 +181,9 @@ bool renderTests() {
     ui.input(InputEvent::BACK,m,time+50000); movie(time+50000,12); snapshot(display,"30-back-wink");
     ui.input(InputEvent::PUSH,m,time+51000); movie(time+51000,12); snapshot(display,"31-push-curious");
     ui.input(InputEvent::BACK_LONG,m,time+52000); movie(time+52000,25);
+    uint32_t beforeTransfer=transferred;
+    frame(time+53000);
+    CHECK(transferred-beforeTransfer<1024);
     return true;
 }
 int main() {

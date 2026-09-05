@@ -5,9 +5,9 @@
 | 验证 | 结果 |
 | --- | --- |
 | `python -m platformio run -e agentdeck -e agentdeck-usb` | 两种串口环境编译、链接和生成固件成功；构建日志无 warning/error |
-| UART 固件资源 | 静态 RAM 25,352 / 327,680 字节；Flash 306,717 / 3,342,336 字节 |
-| 原生 USB 固件资源 | 静态 RAM 25,136 字节；Flash 294,265 字节 |
-| `python tools/check.py` | 4,284 项断言通过；其中包含 1,000 个完整编码器 detent 的重复验证，不代表 4,284 个独立场景 |
+| UART 固件资源 | 静态 RAM 25,476 / 327,680 字节；Flash 312,317 / 3,342,336 字节 |
+| 原生 USB 固件资源 | 静态 RAM 25,252 字节；Flash 299,877 字节 |
+| `python tools/check.py` | 4,285 项检查通过，另外每帧断言模拟 OLED RAM 等于 framebuffer；包含重复 detent 验证，不代表相同数量的独立场景 |
 | 实际 U8g2 framebuffer 检查 | 31 张代表画面：六页、详情、离线、滚动、切页、通知、待机/睡眠/唤醒及交互表情；323 帧 GIF 序列 |
 | 源码检查 | 产品 src 无 delay、String、malloc/new；OLED SendBuffer 只在 Renderer |
 
@@ -17,7 +17,7 @@
 
 预览：[phase1-preview.png](phase1-preview.png)。测试工具会重新生成 `build/preview/`；文档中的 PNG 是本次已检查的快照。
 
-字体升级：ProFont 11/22；统一字号入口 `src/ui/Typography.h`，计时数字按真实字宽居中。
+当前字体：Helvetica 正文/标题、5×8 辅助字体、ProFont 22 数字；统一字号入口 `src/ui/Typography.h`，计时数字按真实字宽居中。
 新伙伴通过 AnimationManager 的 BuddyLook / BuddyLift / BuddyLid / IdleReveal 通道驱动，无 delay 或独立刷新循环。
 新增验证覆盖闲置计时的 millis 回绕、首次唤醒不执行命令、快速反向视线续接、睡眠，以及 REDUCED / OFF 静止行为。
 [动画预览](buddy-motion.gif) 直接编码生产 Renderer 的 framebuffer；GIF 时间精度有限，不能代替真实设备 30FPS 测量。
@@ -40,3 +40,18 @@ frames=24 render_us=32279 max_us=32435 over_budget=0 input_overflow=0
 ```
 
 当前一次完整绘制与 400kHz I2C 发送约 32.3ms，未超过 33ms 帧预算；这次短采样不能替代长时间帧率和交互压力测试。
+
+## 简洁卡通界面与局部刷新实测
+
+已将新版烧录 COM7，I2C 0x3C 应答、启动正常。27 秒启动/眨眼/进入待机采样：
+
+```text
+frames=17  render_us=849  max_us=31664 over_budget=0 input_overflow=0
+frames=90  render_us=1567 max_us=31664 over_budget=0 input_overflow=0
+frames=123 render_us=1566 max_us=31664 over_budget=0 input_overflow=0
+```
+
+单帧统计包含绘制、差异检测及实际需要的 I2C 发送。0.849–1.567ms 的采样可能没有像素变化或只有局部变化，不能当作完整 OLED 传输时间。
+本次最大值 31.664ms，无超过 33ms 的帧；输入溢出为零，但采样不包含人工高速旋钮压力测试。
+`heap=363220` 在采样中保持一致，不等于已经证明数小时无泄漏。
+局部刷新在主机端经过模拟 OLED RAM 与 framebuffer 的逐帧一致性验证，覆盖擦除、切页中断和待机唤醒。
