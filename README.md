@@ -1,144 +1,233 @@
 # Agent Deck
 
-ESP32-S3 桌面 Agent IoT 控制终端，当前固件 **v0.3.0，正式数据全部来自实际通讯**。
-现有六页 UI、字体、伙伴动效、布局、旋钮输入和 33ms 帧调度保持不变。
+A tiny OLED **desk buddy** that quietly watches your AI coding agents — then turns into the control deck for them, for your PC, and for your focus.
 
-已接入 Wi-Fi、MQTT 双向通信、NTP、带密码 ArduinoOTA、PC Bridge、Codex 真实额度读取，以及 Codex / Claude / OpenCode 真实任务运行器和事件输入。
-没有配置或没有心跳时显示离线；没有真实用量/GPU 数据时显示 `--`，时钟同步前显示 `--:--`。不会切回 Mock。
+Run a Codex / Claude / OpenCode session on your desktop and this little ESP32-S3 terminal lights up with what is *actually* happening: who is online, who is working, how much Codex quota is really left, what your CPU / RAM / GPU are doing — with a blinking, look-at-your-knob companion living on the same 128×64 pixels.
 
-[配置与通讯协议](docs/communication.md) · [本轮验证记录](docs/network-validation.md) · [现有 UI 设计](docs/design-v2.md)
+**v0.3.0 · every number on screen is real.** No mocks, no fake usage bars, no pretend "working" states. If there is no data, the deck tells you plainly: `--`.
 
-## 开始使用
+<div align="center">
 
-### Windows 单 EXE
+![chip](https://img.shields.io/badge/SoC-ESP32--S3%20N8%20%E2%80%A2%208MB-orange)
+![firmware](https://img.shields.io/badge/firmware-C%2B%2B%20/%20PlatformIO-8a2be2)
+![bridge](https://img.shields.io/badge/desktop%20bridge-Rust-00add8)
+![display](https://img.shields.io/badge/display-128%C3%9764%20SH1106-333)
+![data](https://img.shields.io/badge/data-real%20only-2ea44f)
 
-双击 `AgentDeck.exe` 即可。内置 Bridge、Mosquitto 和所需 DLL，自动解包到 `%LOCALAPPDATA%\AgentDeck` 并隐藏运行，自动注册当前用户登录自启。无需安装 Rust、Python 或单独启动 MQTT。重复双击不会启动第二份。Codex 额度需要本机已安装并登录 Codex；新设备仍需首次 BLE 配网，MQTT 指向电脑局域网 IP 的 **1884** 端口。
+</div>
 
-本地编译：`powershell -ExecutionPolicy Bypass -File tools/build-exe.ps1`，输出 `build/dist/AgentDeck.exe`。构建机器需 Rust/MSVC 与 Mosquitto（默认 `C:\Program Files\mosquitto`，可用 `-MosquittoDirectory` 指定）。已有配置在首次运行时从 EXE 所在目录及上级项目目录迁移，不会打入发布包。运行配置在 `%LOCALAPPDATA%\AgentDeck\bridge\config.json`，日志在同目录 `.state` 中。
+<div align="center">
 
-GitHub Actions 在 push / PR 时编译固件、运行 UI 和 Rust 测试，并打包、启动验证 EXE 和进程恢复。Actions 的 `AgentDeck-Windows-x64` 产物包含单 EXE；推送 `v*` 标签后自动发布 Release，附带 EXE 与固件文件。EXE 不会自动烧录设备。
+![The buddy in motion](docs/buddy-motion.gif)
 
-升级前在任务管理器结束 AgentDeck 及其 PowerShell、Bridge/Mosquitto 子进程，再运行新版。取消登录自启的命令见下方。
+*The buddy. It follows your knob, blinks at the edge of sleep, and dozes off when you walk away.*
 
-当前 Windows 本机使用 `bridge/mosquitto.local.conf` 的 1884 端口。已有固件与配置时，执行一次 `powershell -ExecutionPolicy Bypass -File tools/install-background.ps1` 安装当前用户登录自启。后台守护每 5 秒检查 MQTT Broker 和 Bridge，退出后自动启动，无需保留终端。网络中断由固件和 Bridge 自动重连。日志位于 `bridge/.state/`。这台电脑需保持原有局域网地址，设备才能连接；可在路由器设置 DHCP 地址保留。
+</div>
 
-取消登录自启：`Remove-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run -Name AgentDeckBackground`（当前后台进程仍会继续运行）。
+---
 
-在仓库根目录执行：
+## Why it exists
+
+Monochrome OLEDs are usually dashboards — grids of numbers. We wanted something you *notice*: a character with real eyes that reacts to you, a UI that slides and breathes instead of blinking frames, all on a $5 board with zero PSRAM. And because "an AI agent terminal" filled with invented data is worse than useless, everything was built around one rule:
+
+## The deck
+
+Six pages live under a knob-driven launcher with six original 24px line icons:
+
+| Page | What it shows (all real) |
+| --- | --- |
+| **Home** | NTP clock (or `--:--`), the buddy, Codex online / working state and true 5 h & weekly quota bars |
+| **Agents** | Live status of your Codex / Claude / OpenCode sessions: online, working, current task, model — the detail view pairs each agent with the buddy's eyes |
+| **Computer** | CPU / RAM / GPU load bars and real network downlink kbit/s |
+| **Network** | Deep-dive status of the device's Wi-Fi / MQTT / NTP connection |
+| **Focus** | A 25-minute focus timer you pause, nudge by ±1 minute and reset from the knob |
+| **Settings** | Brightness, motion level (Full / Reduced / Off), version info |
+
+<div align="center">
+
+![Six-page design preview](docs/phase1-preview.png)
+
+*Design-v2 page preview (see `docs/design-v2.md`).*
+
+</div>
+
+## Highlights
+
+- **A companion, not a widget.** Eyes are drawn from geometry and interpolated — gaze, eyelids, smile and "lift" are tweened, so there are no one-frame jumps. Spin the knob and the buddy's eyes follow; `CONFIRM` makes it happy, `PUSH` curious, `BACK` gives you a wink. Idle 20 s and it settles into big standby eyes; 45 s and it falls asleep. In Reduced / Off motion modes it stays politely static and never blocks an action.
+- **One OLED, buttery motion.** A 33 ms frame scheduler, interruptible tweens (Linear / EaseOutCubic / EaseInOutCubic), and an 8×8 dirty-tile renderer that pushes *only changed pixels* over 400 kHz I2C. Screens slide and interrupt cleanly; static menus stop refreshing entirely.
+- **Your agents, honestly represented.** Bridge reports *online* only when real heartbeats arrive and *working* only from a real task runner or event feed. Agent detail lets you send `confirm`, `cancel`, `stop` — the deck shows `COMMAND SENT`, then `COMMAND COMPLETE` only when the real handler acknowledges, or `COMMAND TIMEOUT` after 12 s.
+- **A desktop bridge in Rust.** One Windows EXE bundles a local MQTT broker, so home users never touch Mosquitto. It samples psutil + `nvidia-smi`, counts real network bytes, and reads Codex quota through the read-only app-server — never touching `auth.json`, never firing a model request, never hiding an unavailable window as zero.
+- **BLE provisioning, no secrets in the repo.** First boot shows `BLUETOOTH SETUP`; the `provision` tool collects Wi-Fi / MQTT over BLE with hidden input, stores credentials only in ESP32 NVS. `Secrets.h` and `bridge/config.json` are gitignored.
+- **Built like firmware you ship.** Networking lives on Core 0 behind a fixed snapshot queue; the UI thread never blocks on DNS, sockets or OTA. UI host tests capture the real U8g2 tile writes and assert the simulated OLED RAM equals the framebuffer every frame. CI compiles, tests, packages and boots the EXE on every push.
+
+---
+
+## Quick start
+
+### Easiest: Windows single EXE
+
+Double-click `AgentDeck.exe` from a [release](https://github.com/ptsfdtz/esp32-agent-hub/releases). It bundles the Bridge, Mosquitto and required DLLs; unpacks to `%LOCALAPPDATA%\AgentDeck`, runs hidden, and registers login autostart for the current user. No Rust, Python or manual MQTT install. A second launch is ignored. Codex quota requires Codex installed and signed in on this machine; a brand-new device still needs one-time BLE provisioning, with MQTT pointed at the PC's LAN IP on port **1884**.
+
+Build it locally:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/build-exe.ps1   # → build/dist/AgentDeck.exe
+```
+
+The build machine needs Rust/MSVC and Mosquitto (default `C:\Program Files\mosquitto`, override with `-MosquittoDirectory`). Runtime config lives in `%LOCALAPPDATA%\AgentDeck\bridge\config.json`, logs in the sibling `.state`. GitHub Actions builds firmware, runs UI + Rust tests, and verifies the packaged EXE on every push / PR; pushing a `v*` tag publishes a release with the EXE and firmware artifacts.
+
+<details>
+<summary>Windows background-service notes</summary>
+
+The current home setup talks to Mosquitto on **1884** via `bridge/mosquitto.local.conf`. Existing firmware + config can be attached to login autostart once:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools/install-background.ps1
+```
+
+A supervisor then checks the MQTT broker and Bridge every 5 s and relaunches them after a crash — no terminal needed. Wi-Fi / MQTT drops are reconnected by firmware and Bridge automatically. Logs: `bridge/.state/`. Your PC should keep a stable LAN address (reserve it via DHCP) since the device dials it directly.
+
+Remove autostart:
+
+```powershell
+Remove-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Run -Name AgentDeckBackground
+```
+
+(The current background process keeps running after this.)
+
+</details>
+
+> Upgrading? End `AgentDeck` **and** its PowerShell / Bridge / Mosquitto children in Task Manager first, then run the new EXE.
+
+### Build the firmware yourself
+
+From the repo root:
 
 ```powershell
 python -m pip install platformio
 python -m platformio run -e agentdeck
+```
 
+Pinned toolchain: Espressif32 **6.12.0** / arduino-esp32 **2.0.17** / U8g2 **2.36.15** / PubSubClient **2.8** / ArduinoJson **6.21.5**. Target is ESP32-S3-DevKitC-1 N8 with 8 MB Flash and no PSRAM dependency — keep the flash size matching your board.
+
+### Run the desktop Bridge
+
+```powershell
 cargo build --release --manifest-path bridge/Cargo.toml
 bridge/target/release/agentdeck-bridge configure --host YOUR_BROKER_IP --device agentdeck-01
 bridge/target/release/agentdeck-bridge service --config bridge/config.json
 ```
 
-新设备无需编辑或重新编译凭据。首次启动会显示 `BLUETOOTH SETUP`；在电脑运行下面的命令，按提示输入 Wi-Fi 和 MQTT 信息：
+Broker account goes through environment variables (`AGENTDECK_MQTT_USER` / `AGENTDECK_MQTT_PASSWORD`) — never into the repo. The Bridge uses your existing broker; it does not deploy one for production.
+
+Codex quota is read read-only from the local `codex app-server` (queried every 60 s, cached ≤ 120 s). A successful app-server init means *Codex online*; only a real task runner or session-event heartbeat means *Working*; an unauthenticated or unavailable quota API shows as unknown — never as a fake `0%`.
+
+Point agents to real data with `run` (wraps a real CLI task) or `feed` (streams real events):
+
+```powershell
+bridge/target/release/agentdeck-bridge run --agent codex --task "Review changes" -- codex exec "Review current changes without editing files"
+your-event-adapter | bridge/target/release/agentdeck-bridge feed --agent claude
+```
+
+### Provision over BLE
+
+New devices show `BLUETOOTH SETUP`. On the PC:
 
 ```powershell
 bridge/target/release/agentdeck-bridge provision
 ```
 
-设备保存配置后自动重启。需要更换网络时，开机期间按住 BACK，再运行同一命令。Wi-Fi 和 MQTT 密码在终端中隐藏输入，并只保存在 ESP32 NVS 和本机忽略提交的配置中。
+Follow the prompts for Wi-Fi, MQTT host / port and optional credentials. The device validates, saves to NVS, and reboots. Switching networks later: hold **BACK** while powering on, then run the same command. No source edit or recompile needed for new devices.
 
-BLE 写入的网络配置保存在设备 NVS；可选的 Secrets.h 和 bridge/config.json 已忽略，不提交凭据。Broker 账号通过 Bridge 环境变量 `AGENTDECK_MQTT_USER` / `AGENTDECK_MQTT_PASSWORD` 配置。Bridge 使用实际已有的 Broker，不自动部署生产服务。
+---
 
-Codex 额度通过本机 `codex app-server` 只读读取。app-server 初始化成功表示 Codex online；只有实际任务运行器或会话事件心跳才表示 Working。额度接口未登录或不可用时显示未知。
-运行器用法、Claude/OpenCode 接入和控制 handler 约定见[通讯文档](docs/communication.md)。
+## Controls
 
-## 构建和升级
+Menu = rotate to select, `CONFIRM` to enter. A short knob `PUSH` does **not** enter.
 
-固定依赖：Espressif32 6.12.0 / Arduino ESP32 2.0.17 / U8g2 2.36.15 / PubSubClient 2.8 / ArduinoJson 6.21.5。
-目标 ESP32-S3-DevKitC-1 N8、8MB Flash、不依赖 PSRAM。硬件容量需与实际板卡一致。
+| On page | Knob | PUSH | CONFIRM | BACK |
+| --- | --- | --- | --- | --- |
+| HOME | open page menu | — | page menu | stay on HOME |
+| Page menu / AGENT / SETTINGS | smooth select | — | enter selection | back one level |
+| PC | open page menu | — | page menu | page menu |
+| IOT | open page menu | — | network details | page menu |
+| TIMER | paused: ±1 min | — | start / pause | page menu |
+| Brightness / motion detail | adjust value | — | — | back to settings list |
+| Agent detail | — | — | send human `confirm` | send `cancel` + back |
 
-```powershell
-# COM7 仅是此前开发记录中的 CH343 端口，使用前核对
-python -m platformio run -e agentdeck -t upload --upload-port COM7
-python -m platformio device monitor -p COM7 -b 115200
-# 原生 USB CDC 接口
-python -m platformio run -e agentdeck-usb
-```
+- Long-press **BACK** anywhere returns to HOME. On an Agent detail, long-press PUSH sends `stop`.
+- Home / PC ignore long-PUSH (no phantom data changes). On the Timer, long-PUSH resets to 25 minutes.
+- Standby's first input only wakes the panel — it never fires a remote command. Long-press threshold is 700 ms.
+- `COMMAND SENT` means written to MQTT; only a matching real handler ack yields `COMMAND COMPLETE`. Unsupported actions are rejected; no ack within 12 s shows `COMMAND TIMEOUT`.
+- Brightness and animation settings live in RAM; Full / Reduced / Off visuals behave as before.
 
-默认 agentdeck 使用 UART，agentdeck-usb 使用原生 USB CDC。
-固件输出 `.pio/build/agentdeck/firmware.bin`。此次启用了明确的 8MB 双 OTA 分区，第一次从旧版升级应使用 USB/UART 全量烧录分区表；之后可以通过 ArduinoOTA 推送。OTA 密码未设置则不启用升级服务。
+## Wiring
 
-## 固定接线
+1.3″ 128×64 SH1106, `U8G2_SH1106_128X64_NONAME_F_HW_I2C` at 400 kHz I2C.
 
-OLED：1.3 英寸 128×64 SH1106，`U8G2_SH1106_128X64_NONAME_F_HW_I2C`，400kHz I2C。
-
-| 信号 | GPIO |
+| Signal | GPIO |
 | --- | --- |
 | CONFIRM / CON | 15 |
 | SDA / SCL | 8 / 9 |
 | PUSH / PSH | 6 |
-| 编码器 TRA / TRS | 4 / 5 |
+| Encoder TRA / TRS | 4 / 5 |
 | BACK / BAK | 7 |
-| 电源 | 3.3V / GND |
+| Power | 3.3V / GND |
 
-输入上拉、按下接地；方向需要修正时只调整 Config.h 的 EncoderDirection。hardware/hardware.ino 仍是保留的原始接线测试，不是产品入口。
+Inputs are pull-up, pressed to ground. If rotation feels inverted, flip only `EncoderDirection` in `Config.h`. `hardware/hardware.ino` stays as a preserved wiring test — not the product entry point.
 
-## 操作
+## Network & reliability
 
-| 场景 | 旋钮 | PUSH | CONFIRM | BACK |
-| --- | --- | --- | --- | --- |
-| HOME | 打开页面菜单 | — | 页面菜单 | 保持 HOME |
-| 页面菜单 / AGENT / SETTINGS | 平滑选择 | — | 进入选中项 | 返回上级 |
-| PC | 页面菜单 | — | 页面菜单 | 页面菜单 |
-| IOT | 页面菜单 | — | 网络详情 | 页面菜单 |
-| TIMER | 暂停时 ±1 分钟 | — | 开始/暂停 | 页面菜单 |
-| 亮度 / 动画详情 | 调整值 | — | — | 设置列表 |
-| Agent 详情 | — | — | 发送人工确认 confirm | 发送 cancel 并返回列表 |
+- Wi-Fi / MQTT / NTP / OTA run in a dedicated **Core 0** task; the main loop exchanges snapshots and commands through fixed zero-wait queues. No shared mutable Model; MQTT callbacks never touch the OLED.
+- Wi-Fi and MQTT reconnect independently with exponential backoff (1, 2, 4 … 60 s, plus jitter). No real heartbeat for 15 s ⇒ Agent / PC go offline. The Focus Timer keeps using `millis()`.
+- Task-completed events surface as toasts — no extra pages.
+- Connection, topic and JSON contracts (status / usage / task / command / ack / telemetry), NTP timestamp rules, and OTA details live in [docs/communication.md](docs/communication.md).
 
-- 菜单统一通过旋钮旋转选择、按下 CONFIRM 进入；短按旋钮 PUSH 不进入。Agent 详情中的 CONFIRM 发送人工确认。
-- 长按 BACK 返回 HOME；Agent 详情长按 PUSH 发送 stop。
-- HOME / PC 长按 PUSH 不再生成数据。Timer 长按 PUSH 复位 25 分钟。
-- 待机首次输入仅唤醒，不发送远程命令；长按门槛仍为 700ms。
-- `COMMAND SENT` 仅表示已发送；收到实际 handler 回执才显示完成；不支持的动作会拒绝，12 秒无回执显示超时。
-- 亮度和动画设置仍保存在 RAM，FULL / REDUCED / OFF 的视觉行为保持原样。
+## OTA & upgrades
 
-## 网络与稳定性
+8 MB dual-OTA layout (`agentdeck-usb` uses native USB CDC instead of UART; firmware outputs to `.pio/build/agentdeck/firmware.bin`). **The first move from an older layout must be a full USB/UART partition-table flash** — don't OTA-push over an old layout. Afterwards ArduinoOTA can push updates; the OTA service only starts when a password is configured (`Secrets.h`), so an unset password simply disables remote upgrades.
 
-Wi-Fi / MQTT / NTP / OTA 在独立 Core 0 任务中处理，主循环通过固定队列零等待交换快照和命令；不共享可变 Model，MQTT callback 不绘制 OLED。
-Wi-Fi 和 MQTT 独立指数退避重连；15 秒没收到实际心跳，Agent / PC 转为离线。Focus Timer 继续使用 millis。
-任务完成事件通过原有 toast 提示，不添加新页面。
+## Diagnostics
 
-串口小写 `s` 输出 `frames / render_us / max_us / over_budget / input_overflow / heap / min_heap`。
-小写 `d` 探测 GPIO8/9 上 0x3C / 0x3D。诊断保留原有实现，不要在帧率测试中反复运行 I2C 探测。
+Via serial monitor (`python -m platformio device monitor -p COM7 -b 115200`):
 
-## 验证
+- lowercase `s` — `frames / render_us / max_us / over_budget / input_overflow / heap / min_heap`
+- lowercase `d` — probe GPIO8/9 for 0x3C / 0x3D (only run on demand, not during frame tests)
+- lowercase `q` — read current state · lowercase `f` — dump the OLED framebuffer (has serial overhead)
 
-最新状态显示修复与 COM7 实机记录见 [实机状态验证](docs/hardware-status-validation.md)。串口 `q` 读取当前状态，`f` 导出 OLED 缓冲；仅按需调用，导出期间有串口开销。
+## Verification & honesty
+
+- Host UI tests run the real state machine against the real U8g2 framebuffer; sample data lives only in `tests/fixtures`, never in firmware.
+- Communication tests use real OS data collection, a local TCP broker on `127.0.0.1`, production C++ JSON parsing, acks, duplicate commands, broker restarts, and real test-task stops.
+- CI (`.github/workflows/build.yml`) builds firmware, runs `tools/check.py` / network checks, `cargo test`, then packages and boots the single EXE.
 
 ```powershell
 python -m pip install ziglang pillow
 python tools/check.py
 python tools/check_network.py
-# 实际 TCP MQTT 本机集成测试，Python/amqtt/paho 仅作为测试 Broker 和客户端
 python -m pip install -r bridge/requirements-test.txt
 python tools/check_mqtt.py
 ```
 
-UI 主机测试运行真实状态机和 U8g2 framebuffer；测试用样本仅位于 tests/fixtures，不编入固件。
-通讯测试包含真实 OS 数据采集、TCP Broker、生产 C++ JSON 解析、回执、重复命令、Broker 重启和真实测试任务停止。
-测试 Broker 仅绑定 127.0.0.1 临时端口并在退出时关闭。
+- Compiles and local comms tests cannot replace real-hardware validation: Wi-Fi-loss input feel, OLED frame pacing, OTA write / recovery, and multi-hour heap stability. What has actually been verified on hardware is tracked in [docs/hardware-status-validation.md](docs/hardware-status-validation.md); protocol and network notes in [docs/network-validation.md](docs/network-validation.md).
 
-编译和本机通讯测试不能替代真机 Wi-Fi 断网输入手感、OLED 30FPS、OTA 写入/恢复和数小时内存稳定性测试。当前验证范围见[验证记录](docs/network-validation.md)。
-
-## 目录
+## Project layout
 
 ```text
-src/config/       固定参数、实际网络配置入口
-src/hardware/     OLED / GPIO / 编码器中断
-src/input/        输入事件、消抖、四相状态机
-src/models/       实际 Agent / PC / 网络 / 设备状态
-src/network/      Core 0 网络任务、JSON 协议、重连退避
-src/ui/           原有动画、帧调度、页面状态、Renderer、Timer
-src/screens/      原有六页布局，绑定真实 Model
-bridge/           Rust PC 监控、Codex 额度、任务运行器、真实事件输入、命令处理
-tests/           UI / 协议 / Bridge 测试（fixtures 仅限测试）
-tools/            构建验证、配置生成、本机 MQTT 集成测试
+src/config/        fixed parameters, real network config entry
+src/hardware/      OLED / GPIO / encoder interrupts
+src/input/         input events, debounce, quadrature state machine
+src/models/        real Agent / PC / network / device state
+src/network/       Core 0 network task, JSON protocol, reconnect backoff
+src/ui/            animations, frame scheduling, screens, Renderer, buddy
+src/screens/       the six pages + buddy drawing, bound to the real Model
+bridge/            Rust PC monitor, Codex quota, task runners, event feed, command handlers
+tests/             UI / protocol / Bridge tests (fixtures are test-only)
+tools/             build & verify scripts, config generation, local MQTT integration
 ```
 
-原始设计保留在 AGENT.md。docs/architecture.md、docs/validation.md 中的 Phase 1 描述是历史记录，当前联网实现以本 README 与 communication.md 为准。
+Original design notes are preserved in `AGENT.md`. `docs/architecture.md` and `docs/validation.md` document the historical Phase 1; the current networked implementation follows this README and `docs/communication.md`. UI design intent: [docs/design-v2.md](docs/design-v2.md).
+
+---
+
+*Your little desk buddy.*
