@@ -9,9 +9,9 @@ constexpr uint32_t FrameMs = 33, DebounceMs = 20, LongPressMs = 700;
 // Change only this sign if the physical clockwise direction is reversed.
 constexpr int EncoderDirection = 1;
 constexpr uint8_t EncoderEdgesPerDetent = 4;
-constexpr char Firmware[] = "0.2.0";
+constexpr char Firmware[] = "0.3.0";
 constexpr uint32_t StaleMs = 15000;
-// Copy Secrets.example.h to Secrets.h; credentials never belong in git.
+// Compile-time defaults; BLE provisioning overrides network fields from NVS.
 struct NetworkConfig {
     char ssid[33] = "";
     char password[65] = "";

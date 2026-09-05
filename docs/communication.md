@@ -1,4 +1,4 @@
-# 实际通讯与部署（v0.2.0）
+# 实际通讯与部署（v0.3.0）
 
 生产固件只使用实际 Wi-Fi / MQTT / NTP 输入。没有网络配置就保持离线；没有 Agent 心跳就保持离线；没有额度或 GPU 数据就显示 `--`。旧 MockService 已移至 `tests/fixtures/`，不会编入固件。现有页面布局、字体、动画、输入硬件和 33ms 调度保持原样，页面改动仅涉及实际数据绑定和状态文案。
 
@@ -7,12 +7,11 @@
 从仓库根目录执行：
 
 ```powershell
-Copy-Item src/config/Secrets.example.h src/config/Secrets.h
 ```
 
-在 `Secrets.h` 中取消相应 `snprintf` 的注释，填写 SSID、密码、MQTT Host、用户名、密码和 OTA 密码。`deviceId` 默认 `agentdeck-01`；多台设备必须分别配置不同 ID。SSID 支持 32 字节，broker 主机名最多 63 字节。ESP32 必须连接 2.4GHz 网络；MQTT Host 填 Broker 的局域网地址，不能填 PC 上的 `127.0.0.1`。时区默认 `CST-8`（UTC+8），NTP 默认 `pool.ntp.org`，可改为实际可达的局域网 NTP。
+网络凭据默认通过 BLE 配置并保存在 NVS。`Secrets.h` 仅用于 OTA 密码、时区、NTP 或开发阶段的编译默认值。`deviceId` 默认 `agentdeck-01`；多台设备必须分别配置不同 ID。SSID 支持 32 字节，broker 主机名最多 63 字节。ESP32 必须连接 2.4GHz 网络；MQTT Host 填 Broker 的局域网地址，不能填 PC 上的 `127.0.0.1`。时区默认 `CST-8`（UTC+8），NTP 默认 `pool.ntp.org`。
 
-没有创建 Secrets.h 仍可编译，设备启动提示 `CONFIGURE WIFI`；不会回退到模拟数据。Secrets.h 已加入 gitignore。
+没有创建 Secrets.h 仍可编译，首次启动直接进入 BLE 配网；不会回退到模拟数据。Secrets.h 已加入 gitignore。
 
 ```powershell
 python -m platformio run -e agentdeck
@@ -25,6 +24,16 @@ python -m platformio run -e agentdeck -t upload --upload-port COM7
 ## 2. 配置 PC Bridge
 
 Bridge 使用已有 MQTT Broker；不会自动安装或启动生产 Broker。固件目前使用局域网 MQTT TCP + 可选用户名密码，没有 TLS；不要将该端口直接暴露到公网。Broker 应对设备与 Bridge 设置独立账号和 Topic ACL。Bridge 支持 `tls_ca` 连接 TLS Broker，但固件端仍需要受信任的局域网 listener。
+
+### BLE 配网
+
+首次启动时设备自动显示 `BLUETOOTH SETUP`。已有配置时，在开机期间按住 BACK 可再次进入。电脑端运行：
+
+```powershell
+bridge/target/release/agentdeck-bridge provision
+```
+
+Rust 工具扫描 `AgentDeck Setup`，交互收集 Wi-Fi、MQTT Host/端口、可选账号和设备 ID。密码隐藏输入，配置按小块写入 BLE GATT；设备校验后保存到 NVS 并重启。未收到完整有效配置时不会覆盖旧配置。BLE 配网只在首次启动或物理按键触发时开放。
 
 ```powershell
 cargo build --release --manifest-path bridge/Cargo.toml
@@ -109,7 +118,7 @@ Agent 详情中只有 CONFIRM 发送人工确认 `confirm`，短按 PUSH 不发�
 
 MQTT payload 上限 1024 字节；model 最多 31 字节，task 79 字节，notify 21 字节；非法类型、超范围、过长或不完整消息整条拒绝，不会部分覆盖 Model。Bridge 发布遥测和回执采用 QoS0，设备订阅请求 QoS1，实际送达级别取发布级别；丢失状态由下一次心跳修复，控制结果由业务 ACK/超时判定。
 
-远程 config 是幂等设值，notify 是短期通知，均不得 retained；PubSubClient 回调不暴露 retained 标志，ESP 端依靠时间戳/有效期拒绝旧消息，不提供 exactly-once 通知语义。设置暂不持久化；网络凭据只在 Secrets.h 中配置。
+远程 config 是幂等设值，notify 是短期通知，均不得 retained；PubSubClient 回调不暴露 retained 标志，ESP 端依靠时间戳/有效期拒绝旧消息，不提供 exactly-once 通知语义。显示设置暂不持久化；BLE 网络凭据保存在 NVS。
 
 ## 6. NTP、OTA 与 UI 隔离
 

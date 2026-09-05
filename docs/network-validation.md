@@ -1,4 +1,4 @@
-# v0.2.0 软件与通讯验证
+# v0.3.0 软件与通讯验证
 
 日期：2026-09-05。原始 AGENT.md 保持原样；生产路径没有 Mock 数据源、模拟时钟或模拟按钮动作。
 
@@ -10,8 +10,9 @@
 | `python tools/check.py` | 4,331 项 CHECK 通过，另有实际 framebuffer 一致性 assert；断言显式启用，不依赖编译器 NDEBUG 默认值 |
 | `python tools/check_network.py` | 生产 C++ JSON 解析/退避测试及 Rust Bridge 单元测试通过 |
 | `python tools/check_mqtt.py` | 真实本机 TCP Broker 端到端测试通过 |
-| 本机 `CodexUsage(['codex','app-server'])._query()` | 真实只读调用成功，返回可用的 5h / week 额度窗口；未保存账户凭据或原始响应 |
+| Rust Codex app-server 客户端 | 初始化成功并映射 online；当前 CLI 未登录，额度接口明确返回认证错误，因此用量保持未知 |
 | `agentdeck-bridge configure ... --output build/test-bridge-config.json` | 本地配置生成成功，未覆盖用户配置 |
+| Windows BLE + COM7 真机 | 首次配网扫描、分块写入、NVS 保存和自动重启成功；再次硬复位后配置仍有效 |
 | `git diff --check` | 无空白错误 |
 
 UI 回归覆盖原有四相输入、抖动、长按互斥、快速输入、Tween 中断、millis 回绕、Timer、菜单、切页首帧连续性、partial tile 传输、静止停刷与伙伴动作；新增真实命令请求路由和六种网络数据空缺/错误状态。没有修改 Renderer、Animation、FrameScheduler、Typography 或硬件接线。
@@ -26,12 +27,9 @@ MQTT 集成测试会在临时 127.0.0.1 端口启动实际 Broker 和 Bridge，�
 
 ## 尚需实际设备环境验收
 
-本次未获得实际 Wi-Fi / Broker 配置，因此没有烧录或连接用户的真实 ESP32，也没有修改 Wi-Fi、Broker、防火墙或任务计划程序。
-
-1. 使用实际 Secrets.h 和新分区全量烧录，验证 Wi-Fi 连接、真实 RSSI/IP、NTP 同步与断网后本地时间继续运行。
-2. 断开 AP、关闭 Broker、恢复 Broker；快速旋转编码器并运行 Timer，确认 UI 不冻结、输入不溢出、自动恢复无须重启。
-3. 在设备端完成真实 Agent 状态/用量显示和按钮回执闭环；Claude / OpenCode 的已有 IDE 会话须接上其实际事件和控制接口。
-4. 设置 OTA 密码，验证实际升级、认证失败、传输中断、重连和固件重启。尚未验证硬件 OTA 或断电恢复。
-5. 连续运行数小时，多次记录串口 s 与 telemetry 的 heap/min_heap、frame/render_us/max_us/over_budget/input_overflow。当前编译和主机测试不能证明实际 OLED 稳定 30FPS，也不能证明 Flash 擦写期间没有短暂停顿。
+1. 断开 AP、关闭 Broker、恢复 Broker；快速旋转编码器并运行 Timer，确认 UI 不冻结、输入不溢出、自动恢复无须重启。
+2. 在设备端完成真实按钮命令回执闭环；Claude / OpenCode 的已有 IDE 会话须接上其实际事件和控制接口。
+3. 设置 OTA 密码，验证实际升级、认证失败、传输中断、重连和固件重启。尚未验证硬件 OTA 或断电恢复。
+4. 连续运行数小时，多次记录串口 s 与 telemetry 的 heap/min_heap、frame/render_us/max_us/over_budget/input_overflow。当前测试不能证明长期稳定性，也不能证明 Flash 擦写期间没有短暂停顿。
 
 配置、协议、明确支持的控制动作和部署步骤见 [communication.md](communication.md)。

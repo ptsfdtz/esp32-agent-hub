@@ -2,6 +2,7 @@
 #include "hardware/Display.h"
 #include "hardware/Input.h"
 #include "network/NetworkService.h"
+#include "network/Provisioning.h"
 #include "config/RuntimeConfig.h"
 #include "ui/Renderer.h"
 
@@ -11,6 +12,7 @@ Model model;
 NetworkService network;
 ScreenManager ui;
 Renderer renderer(oled.canvas.getU8g2());
+bool setupMode = false;
 
 void setup() {
     Serial.begin(115200);
@@ -26,10 +28,22 @@ void setup() {
     strcpy(model.agents[1].name, "Claude");
     strcpy(model.agents[2].name, "OpenCode");
     ui.begin(model, millis());
-    if (!network.begin(config::networkConfig())) ui.notify("NETWORK START FAILED", millis());
+    auto networkConfig = config::networkConfig();
+    provisioning::load(networkConfig);
+    setupMode = !provisioning::saved();
+    setupMode |= digitalRead(config::Back) == LOW;
+    if (setupMode) {
+        provisioning::begin(networkConfig.deviceId);
+        ui.notify("BLUETOOTH SETUP", millis());
+    } else if (!network.begin(networkConfig)) ui.notify("NETWORK START FAILED", millis());
 }
 void loop() {
     uint32_t now = millis();
+    if (setupMode) {
+        provisioning::poll();
+        static uint32_t setupNotice = 0;
+        if (uint32_t(now - setupNotice) >= 1400) { ui.notify("BLUETOOTH SETUP", now); setupNotice = now; }
+    }
     // Bound per-loop work; ISR continues to collect edges during I2C transfer.
     for (int i=0; i<16; ++i) {
         auto event = input.poll(now);

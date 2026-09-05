@@ -46,6 +46,22 @@ enum Commands {
         #[arg(long, default_value = "bridge/config.json")]
         output: PathBuf,
     },
+    Provision {
+        #[arg(long)]
+        ssid: Option<String>,
+        #[arg(long)]
+        wifi_password: Option<String>,
+        #[arg(long)]
+        mqtt_host: Option<String>,
+        #[arg(long, default_value_t = 1883)]
+        mqtt_port: u16,
+        #[arg(long)]
+        mqtt_user: Option<String>,
+        #[arg(long)]
+        mqtt_password: Option<String>,
+        #[arg(long, default_value = "agentdeck-01")]
+        device: String,
+    },
     Run {
         #[arg(long, default_value = "bridge/.state")]
         state_dir: PathBuf,
@@ -251,6 +267,29 @@ fn main() -> Result<()> {
             output,
         } => {
             configure(host, port, device, output)?;
+            0
+        }
+        Commands::Provision {
+            ssid,
+            wifi_password,
+            mqtt_host,
+            mqtt_port,
+            mqtt_user,
+            mqtt_password,
+            device,
+        } => {
+            let runtime = tokio::runtime::Runtime::new()?;
+            runtime.block_on(agentdeck_bridge::provision::run(
+                agentdeck_bridge::provision::Options {
+                    ssid,
+                    wifi_password,
+                    mqtt_host,
+                    mqtt_port,
+                    mqtt_user,
+                    mqtt_password,
+                    device_id: device,
+                },
+            ))?;
             0
         }
         Commands::Run {

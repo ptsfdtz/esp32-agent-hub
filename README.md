@@ -1,6 +1,6 @@
 # Agent Deck
 
-ESP32-S3 桌面 Agent IoT 控制终端，当前固件 **v0.2.0，正式数据全部来自实际通讯**。
+ESP32-S3 桌面 Agent IoT 控制终端，当前固件 **v0.3.0，正式数据全部来自实际通讯**。
 现有六页 UI、字体、伙伴动效、布局、旋钮输入和 33ms 帧调度保持不变。
 
 已接入 Wi-Fi、MQTT 双向通信、NTP、带密码 ArduinoOTA、PC Bridge、Codex 真实额度读取，以及 Codex / Claude / OpenCode 真实任务运行器和事件输入。
@@ -14,8 +14,6 @@ ESP32-S3 桌面 Agent IoT 控制终端，当前固件 **v0.2.0，正式数据全
 
 ```powershell
 python -m pip install platformio
-Copy-Item src/config/Secrets.example.h src/config/Secrets.h
-# 编辑 Secrets.h：实际 Wi-Fi、MQTT Broker 和 OTA 密码
 python -m platformio run -e agentdeck
 
 cargo build --release --manifest-path bridge/Cargo.toml
@@ -23,8 +21,15 @@ bridge/target/release/agentdeck-bridge configure --host YOUR_BROKER_IP --device 
 bridge/target/release/agentdeck-bridge service --config bridge/config.json
 ```
 
-Secrets.h 和 bridge/config.json 已忽略，不提交凭据。Broker 账号通过 Bridge 环境变量 `AGENTDECK_MQTT_USER` / `AGENTDECK_MQTT_PASSWORD` 配置。
-没有 Secrets.h 也可编译，但设备保持离线并提示配置 Wi-Fi。Bridge 使用实际已有的 Broker，不自动部署生产服务。
+新设备无需编辑或重新编译凭据。首次启动会显示 `BLUETOOTH SETUP`；在电脑运行下面的命令，按提示输入 Wi-Fi 和 MQTT 信息：
+
+```powershell
+bridge/target/release/agentdeck-bridge provision
+```
+
+设备保存配置后自动重启。需要更换网络时，开机期间按住 BACK，再运行同一命令。Wi-Fi 和 MQTT 密码在终端中隐藏输入，并只保存在 ESP32 NVS 和本机忽略提交的配置中。
+
+BLE 写入的网络配置保存在设备 NVS；可选的 Secrets.h 和 bridge/config.json 已忽略，不提交凭据。Broker 账号通过 Bridge 环境变量 `AGENTDECK_MQTT_USER` / `AGENTDECK_MQTT_PASSWORD` 配置。Bridge 使用实际已有的 Broker，不自动部署生产服务。
 
 Codex 额度通过本机 `codex app-server` 只读读取。app-server 初始化成功表示 Codex online；只有实际任务运行器或会话事件心跳才表示 Working。额度接口未登录或不可用时显示未知。
 运行器用法、Claude/OpenCode 接入和控制 handler 约定见[通讯文档](docs/communication.md)。

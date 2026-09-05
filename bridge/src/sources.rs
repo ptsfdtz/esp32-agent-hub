@@ -184,7 +184,7 @@ fn query_codex(argv: &[String]) -> anyhow::Result<(bool, Option<Value>)> {
     writeln!(
         input,
         "{}",
-        json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"agentdeck_bridge","version":"0.2.0"}}})
+        json!({"id":1,"method":"initialize","params":{"clientInfo":{"name":"agentdeck_bridge","version":env!("CARGO_PKG_VERSION")}}})
     )?;
     writeln!(input, "{}", json!({"method":"initialized","params":{}}))?;
     writeln!(
