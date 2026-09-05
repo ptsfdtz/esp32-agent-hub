@@ -8,10 +8,10 @@
 | --- | --- |
 | `python -m platformio run -e agentdeck -e agentdeck-usb` | 两个 ESP32-S3 目标均编译成功 |
 | `python tools/check.py` | 4,331 项 CHECK 通过，另有实际 framebuffer 一致性 assert；断言显式启用，不依赖编译器 NDEBUG 默认值 |
-| `python tools/check_network.py` | 生产 C++ JSON 解析/退避测试通过，14 项 Python 数据源/命令测试通过 |
+| `python tools/check_network.py` | 生产 C++ JSON 解析/退避测试及 Rust Bridge 单元测试通过 |
 | `python tools/check_mqtt.py` | 真实本机 TCP Broker 端到端测试通过 |
 | 本机 `CodexUsage(['codex','app-server'])._query()` | 真实只读调用成功，返回可用的 5h / week 额度窗口；未保存账户凭据或原始响应 |
-| `python tools/configure_bridge.py ... --output build/test-bridge-config.json` | 本地配置生成成功，未覆盖用户配置 |
+| `agentdeck-bridge configure ... --output build/test-bridge-config.json` | 本地配置生成成功，未覆盖用户配置 |
 | `git diff --check` | 无空白错误 |
 
 UI 回归覆盖原有四相输入、抖动、长按互斥、快速输入、Tween 中断、millis 回绕、Timer、菜单、切页首帧连续性、partial tile 传输、静止停刷与伙伴动作；新增真实命令请求路由和六种网络数据空缺/错误状态。没有修改 Renderer、Animation、FrameScheduler、Typography 或硬件接线。

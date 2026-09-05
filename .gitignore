@@ -5,3 +5,4 @@ src/config/Secrets.h
 build/
 bridge/config.json
 bridge/.state/
+bridge/target/

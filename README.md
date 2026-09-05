@@ -18,15 +18,15 @@ Copy-Item src/config/Secrets.example.h src/config/Secrets.h
 # 编辑 Secrets.h：实际 Wi-Fi、MQTT Broker 和 OTA 密码
 python -m platformio run -e agentdeck
 
-python -m pip install -r bridge/requirements.txt
-python tools/configure_bridge.py --host YOUR_BROKER_IP --device agentdeck-01
-python -m bridge.service --config bridge/config.json
+cargo build --release --manifest-path bridge/Cargo.toml
+bridge/target/release/agentdeck-bridge configure --host YOUR_BROKER_IP --device agentdeck-01
+bridge/target/release/agentdeck-bridge service --config bridge/config.json
 ```
 
 Secrets.h 和 bridge/config.json 已忽略，不提交凭据。Broker 账号通过 Bridge 环境变量 `AGENTDECK_MQTT_USER` / `AGENTDECK_MQTT_PASSWORD` 配置。
 没有 Secrets.h 也可编译，但设备保持离线并提示配置 Wi-Fi。Bridge 使用实际已有的 Broker，不自动部署生产服务。
 
-Codex 额度通过本机已登录的 `codex app-server` 只读读取。正在运行的 Agent 状态需要由实际任务运行器或会话事件接入；不根据账号登录成功推断 Working。
+Codex 额度通过本机 `codex app-server` 只读读取。app-server 初始化成功表示 Codex online；只有实际任务运行器或会话事件心跳才表示 Working。额度接口未登录或不可用时显示未知。
 运行器用法、Claude/OpenCode 接入和控制 handler 约定见[通讯文档](docs/communication.md)。
 
 ## 构建和升级
@@ -94,7 +94,7 @@ Wi-Fi 和 MQTT 独立指数退避重连；15 秒没收到实际心跳，Agent / 
 python -m pip install ziglang pillow
 python tools/check.py
 python tools/check_network.py
-# 实际 TCP MQTT 本机集成测试，amqtt 仅用于测试
+# 实际 TCP MQTT 本机集成测试，Python/amqtt/paho 仅作为测试 Broker 和客户端
 python -m pip install -r bridge/requirements-test.txt
 python tools/check_mqtt.py
 ```
@@ -115,7 +115,7 @@ src/models/       实际 Agent / PC / 网络 / 设备状态
 src/network/      Core 0 网络任务、JSON 协议、重连退避
 src/ui/           原有动画、帧调度、页面状态、Renderer、Timer
 src/screens/      原有六页布局，绑定真实 Model
-bridge/           PC 监控、Codex 额度、任务运行器、真实事件输入、命令处理
+bridge/           Rust PC 监控、Codex 额度、任务运行器、真实事件输入、命令处理
 tests/           UI / 协议 / Bridge 测试（fixtures 仅限测试）
 tools/            构建验证、配置生成、本机 MQTT 集成测试
 ```

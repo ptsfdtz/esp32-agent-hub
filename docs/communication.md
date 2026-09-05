@@ -27,17 +27,17 @@ python -m platformio run -e agentdeck -t upload --upload-port COM7
 Bridge 使用已有 MQTT Broker；不会自动安装或启动生产 Broker。固件目前使用局域网 MQTT TCP + 可选用户名密码，没有 TLS；不要将该端口直接暴露到公网。Broker 应对设备与 Bridge 设置独立账号和 Topic ACL。Bridge 支持 `tls_ca` 连接 TLS Broker，但固件端仍需要受信任的局域网 listener。
 
 ```powershell
-python -m pip install -r bridge/requirements.txt
-python tools/configure_bridge.py --host 192.168.1.10 --device agentdeck-01
+cargo build --release --manifest-path bridge/Cargo.toml
+bridge/target/release/agentdeck-bridge configure --host 192.168.1.10 --device agentdeck-01
 # 按 Broker 配置设置环境变量；不要把密码写进仓库
 $env:AGENTDECK_MQTT_USER = 'your-user'
 $env:AGENTDECK_MQTT_PASSWORD = 'your-password'
-python -m bridge.service --config bridge/config.json
+bridge/target/release/agentdeck-bridge service --config bridge/config.json
 ```
 
 生成器只新建文件，不覆盖已有配置；它会为三种 Agent 配置本仓库实际运行器的 `stop` / `cancel` 处理程序。也可以手动复制 `bridge/config.example.json`，其默认 `handlers` 为空，所有控制动作会明确拒绝，直到接入实际处理程序。
 
-保持 Bridge 进程运行。每个 `client_id` 只运行一个实例。需要长期后台运行时，可将上述命令加入 Windows 任务计划程序（工作目录设为仓库根目录，使用相同 Python 和环境变量）。当前没有擅自创建系统任务。
+保持 Bridge 进程运行。每个 `client_id` 只运行一个实例。需要长期后台运行时，可将上述命令加入 Windows 任务计划程序（工作目录设为仓库根目录并配置相同环境变量）。当前没有创建系统任务。
 
 数据源：
 
@@ -50,14 +50,14 @@ python -m bridge.service --config bridge/config.json
 | Agent online / working / task | 下面的真实任务运行器或实际事件流 | 离线 |
 | 时钟 | ESP32 NTP / 本地系统时钟 | 首次同步前 `--:--` |
 
-Codex 用量每 60 秒读取，最多保留 120 秒有效缓存；不读取 auth.json、不发送模型请求、不触发登录或购买。不把任意配额窗口硬当成 5h / week：只有官方窗口分别为 300 / 10080 分钟才映射，否则标记未知。账号额度可读不代表某个 IDE 会话正在工作，Bridge 不会据此伪造 Agent online/working。
+Codex 用量每 60 秒读取，最多保留 120 秒有效缓存；不读取 auth.json、不发送模型请求、不触发登录或购买。不把任意配额窗口硬当成 5h / week：只有官方窗口分别为 300 / 10080 分钟才映射，否则标记未知。app-server 初始化成功表示 Codex online；只有实际 runner 或事件心跳才表示 working。
 
 ## 3. 接入真实 Agent 状态
 
 方式 A：用运行器包住实际的一次性 CLI 任务。`--task` 仅是屏幕任务标签，不会替你向 Agent 发送任务；`--` 后的命令由你实际决定。
 
 ```powershell
-python -m bridge.agent run --agent codex --task 'Review current changes' -- codex exec 'Review current changes without editing files'
+bridge/target/release/agentdeck-bridge run --agent codex --task "Review current changes" -- codex exec "Review current changes without editing files"
 # 其他 CLI：保持相同结构，将 --agent 和 -- 后面的实际命令改为 claude 或 opencode
 ```
 
@@ -66,7 +66,7 @@ python -m bridge.agent run --agent codex --task 'Review current changes' -- code
 方式 B：将你实际的 Codex / Claude / OpenCode 扩展、hook 或服务事件转换成下面的 JSON 行，持续写入 `feed`：
 
 ```powershell
-your-real-event-adapter | python -m bridge.agent feed --agent claude
+your-real-event-adapter | bridge/target/release/agentdeck-bridge feed --agent claude
 ```
 
 每行包含真实 `online`、`working`，可包含 `task`、`model`、`usage`、`completed_at`。feed 按接收时间增加 `ts`，原子写入状态文件。生产者必须每 1–5 秒提供当前实际状态/心跳；15 秒没更新就离线。`usage` 的字段见下表，其值必须来自提供商数据，不能估算或填样例。`completed_at` 是实际成功完成事件的 Unix 秒时间戳。
@@ -129,5 +129,5 @@ OTA 处理在网络任务，成功后按 ArduinoOTA 默认行为重启；失败�
 
 - [PubSubClient 2.8 API](https://pubsubclient.knolleary.net/api)：MQTT buffer、socket timeout、LWT 与发布订阅接口。
 - [Espressif ArduinoOTA](https://github.com/espressif/arduino-esp32/blob/2.0.17/libraries/ArduinoOTA/examples/BasicOTA/BasicOTA.ino)：固定版本 OTA 接口。
-- [Paho Python](https://eclipse.dev/paho/files/paho.mqtt.python/html/client.html)：VERSION2 回调及自动重连。
+- [rumqttc](https://docs.rs/rumqttc/)：Rust MQTT 客户端及自动重连。
 - [Codex App Server](https://learn.chatgpt.com/docs/app-server)：initialize / initialized、account/rateLimits/read、配额窗口及 reset 时间。未使用文档中的任何示例配额作为生产数据。
